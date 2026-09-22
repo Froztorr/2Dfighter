@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 const root=process.cwd();
-const publicFiles = new Set(['/index.html','/style.css','/app.js','/core.mjs',...['brute','lizard','wraith','knight','gear','hero','guards'].map(name=>`/assets/${name}.png`)]);
+const publicFiles = new Set(['/index.html','/style.css','/app.js','/core.mjs',...['brute','lizard','wraith','knight','gear','hero','guards','frost','spider','demon','relics'].map(name=>`/assets/${name}.png`)]);
 createServer(async(req,res)=>{
   try {
     const url = new URL(req.url,'http://localhost');

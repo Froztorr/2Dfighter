@@ -4,6 +4,26 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 const core = await import('./core.mjs').catch(() => ({}));
 
+test('daily quests reset at Bangkok midnight and pay once, minigame prizes are capped and survive reload',()=>{
+  const s=core.newSave(),before=Date.parse('2026-09-22T16:59:59Z'),after=before+1000;
+  assert.equal(core.dayKey(before),'2026-09-22');assert.equal(core.dayKey(after),'2026-09-23');
+  assert.equal(core.claimQuest(s,'hunt',before),null);
+  core.progress(s,'kills',6,before);const reward=core.claimQuest(s,'hunt',before);assert.ok(reward.gold>0);
+  assert.equal(core.claimQuest(s,'hunt',before),null);
+  const restored=core.loadSave(JSON.stringify(s));assert.equal(core.claimQuest(restored,'hunt',before),null);
+  assert.equal(core.daily(s,after).counts.kills,0);
+  for(let i=0;i<3;i++)assert.ok(core.finishMini(s,'forge',15,after).gold>0);
+  assert.equal(core.finishMini(s,'forge',15,after).gold,0);
+  assert.equal(core.finishMini(s,'forge',999,after),null);
+  assert.equal(core.daily(core.loadSave(JSON.stringify(s)),after).plays.forge,3);
+});
+test('campaign content has six playable floors and valid new equipment drops',()=>{
+  assert.equal(core.FLOORS.length,6);
+  for(const floor of core.FLOORS){assert.equal(floor.enemies.length,3);for(const id of floor.drops)assert.ok(core.ITEMS[id]);}
+  const s=core.loadSave(JSON.stringify({...core.newSave(),unlocked:6}));assert.equal(s.unlocked,6);
+  assert.equal(core.forgeScore(.5),3);assert.equal(core.forgeScore(.99),0);
+});
+
 test('equipment enforces two hands, shields, unique rings and migrates old saves',()=>{
   const s=core.newSave();s.owned=Object.keys(core.ITEMS);
   assert.equal(core.stats(s).canBlock,true);
@@ -62,7 +82,7 @@ test('shop refuses unaffordable and duplicate purchases; gear and upgrades chang
 test('save loading rejects invalid equipment and clamps corrupt progression',()=>{
   assert.equal(typeof core.loadSave,'function');
   const s=core.loadSave('{"gold":-5,"level":999,"unlocked":999,"owned":["hacked"],"equipment":{"weapon":"hacked"}}');
-  assert.equal(s.gold,0); assert.equal(s.unlocked,3); assert.equal(s.level,20);
+  assert.equal(s.gold,0); assert.equal(s.unlocked,6); assert.equal(s.level,20);
   assert.equal(s.equipment.weapon,'rust-sword');
   assert.deepEqual(core.loadSave('invalid'),core.newSave());
 });
@@ -94,12 +114,12 @@ test('guard breaks on insufficient or exactly depleted stamina and recovers grad
   assert.equal(core.regenStamina(0,1,false),16);
   assert.equal(core.regenStamina(0,1,true),4);
 });
-test('real game loop: three floors, parry stun, dodge, spells, rewards, death, and pause', async()=>{
+test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and pause', async()=>{
   const nodes=new Map(), events=new Map(), storage=new Map();
   const imageCalls=[];
   const drawing=new Proxy({}, {get:(_,key)=>key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
   const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{setProperty(){}},dataset:{},hidden:true,setAttribute(){},classList:{toggle(){}},addEventListener(type,fn){events.set(id+':'+type,fn);},getContext:()=>drawing,querySelector:()=>node('heading'),getBoundingClientRect:()=>({left:0,top:0,width:240,height:400}),setPointerCapture(){}});return nodes.get(id);};
-  const context=vm.createContext({...core,Image:class{complete=true;naturalWidth=1122;naturalHeight=1402},document:{getElementById:node,querySelectorAll:()=>[],addEventListener(){},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
+  const context=vm.createContext({...core,Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){if(/\/(frost|spider|demon)\.png$/.test(path)){this.naturalWidth=1024;this.naturalHeight=1536;}}},document:{getElementById:node,querySelectorAll:()=>[],addEventListener(){},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
   const source=(await readFile(new URL('./app.js',import.meta.url),'utf8')).replace(/^import[^\n]+\n/,'');
   vm.runInContext(source,context);
   const run=s=>vm.runInContext(s,context);
@@ -120,7 +140,7 @@ test('real game loop: three floors, parry stun, dodge, spells, rewards, death, a
   run('attack={dir:"up",kind:"normal",at:time+300};time+=1;defensive("down","slash");time+=230;slash("left")');assert.ok(run('enemy.hp')<guardedHp);
   run('enter(1);hp=40;drinkPotion()');assert.equal(run('hp'),90);assert.equal(run('run.potions'),1);assert.equal(run('save.potions'),2);
   run('enter(1);drinkPotion()');assert.equal(run('save.potions'),2,'full health must not consume potion');
-  for(let floor=1;floor<=3;floor++){
+  for(let floor=1;floor<=6;floor++){
     const startingGold=run('save.gold');
     run(`enter(${floor})`);
     for(let room=0;room<3;room++){
@@ -134,7 +154,7 @@ test('real game loop: three floors, parry stun, dodge, spells, rewards, death, a
     assert.match(nodes.get('panelBody').innerHTML,/3 of 3 stars/);
     const balance=run('save.gold');run('loop(last+16)');assert.equal(run('save.gold'),balance);
   }
-  assert.equal(run('save.unlocked'),3);assert.ok(storage.has('emberblade-v1'));
+  assert.equal(run('save.unlocked'),6);assert.ok(storage.has('emberblade-v1'));
   run('enter(3);hp=1;attack={dir:"up",at:time};loop(last+16)');assert.equal(run('phase'),'dead');assert.equal(run('paused'),true);
   run('enter(3)');assert.equal(run('hp'),100);assert.equal(run('phase'),'combat');
   run('stamina=100;setBlocking(true);attack={dir:"up",kind:"heavy",at:time};loop(last+16)');
@@ -164,5 +184,24 @@ test('real game loop: three floors, parry stun, dodge, spells, rewards, death, a
     assert.equal(Math.floor((strike[2]+strike[4]/2)/280.4),expectedRow);
     assert.notEqual(prep[1],strike[1],'windup and strike must be different frames');
     for(const frame of [prep,strike]){assert.ok(frame.slice(1).every(Number.isFinite));assert.ok(frame[1]>=0&&frame[2]>=0&&frame[1]+frame[3]<=1122&&frame[2]+frame[4]<=1402);}
+  }
+  for(const [i,type] of ['frost','spider','demon'].entries())for(const dir of ['up','down','left','right']){
+    run(`enter(${i+4});enemy.type='${type}';draw();attack={dir:'${dir}',kind:'normal',at:time+900};draw()`);
+    const prep=imageCalls.findLast(frame=>frame[0]===run(`sprites.${type}`));
+    run('resolveAttack();draw()');const strike=imageCalls.findLast(frame=>frame[0]===run(`sprites.${type}`));
+    assert.notEqual(prep[1],strike[1]);
+    for(const frame of [prep,strike])assert.ok(frame[1]>=0&&frame[2]>=0&&frame[1]+frame[3]<=1024&&frame[2]+frame[4]<=1536);
+  }
+  run('save=newSave()');
+  for(let f=1;f<=6;f++){
+    run(`enter(${f})`);
+    // Play the actual scheduler at 60 fps with starter gear, without injecting enemies or damage.
+    run(`for(let frames=0;frames<18000&&!['won','dead'].includes(phase);frames++){
+      loop(last+16);
+      if(attack&&attack.at-time<=130){if(attack.kind==='sweep')setBlocking(true);else if(attack.kind==='heavy')evade(attack.dir);else slash(DIR[attack.dir]);}
+      else if(!attack){setBlocking(false);if(enemy.openUntil>time)slash('left');}
+    }`);
+    assert.equal(run('phase'),'won',`starter equipment can finish floor ${f} using correctly timed defenses`);
+    assert.equal(run('run.damage'),0);
   }
 });
