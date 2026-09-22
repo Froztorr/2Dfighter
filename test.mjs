@@ -1,0 +1,207 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
+const core = await import('./core.mjs').catch(() => ({}));
+
+test('daily quests reset at Bangkok midnight and pay once, minigame prizes are capped and survive reload',()=>{
+  const s=core.newSave(),before=Date.parse('2026-09-22T16:59:59Z'),after=before+1000;
+  assert.equal(core.dayKey(before),'2026-09-22');assert.equal(core.dayKey(after),'2026-09-23');
+  assert.equal(core.claimQuest(s,'hunt',before),null);
+  core.progress(s,'kills',6,before);const reward=core.claimQuest(s,'hunt',before);assert.ok(reward.gold>0);
+  assert.equal(core.claimQuest(s,'hunt',before),null);
+  const restored=core.loadSave(JSON.stringify(s));assert.equal(core.claimQuest(restored,'hunt',before),null);
+  assert.equal(core.daily(s,after).counts.kills,0);
+  for(let i=0;i<3;i++)assert.ok(core.finishMini(s,'forge',15,after).gold>0);
+  assert.equal(core.finishMini(s,'forge',15,after).gold,0);
+  assert.equal(core.finishMini(s,'forge',999,after),null);
+  assert.equal(core.daily(core.loadSave(JSON.stringify(s)),after).plays.forge,3);
+});
+test('campaign content has six playable floors and valid new equipment drops',()=>{
+  assert.equal(core.FLOORS.length,6);
+  for(const floor of core.FLOORS){assert.equal(floor.enemies.length,3);for(const id of floor.drops)assert.ok(core.ITEMS[id]);}
+  const s=core.loadSave(JSON.stringify({...core.newSave(),unlocked:6}));assert.equal(s.unlocked,6);
+  assert.equal(core.forgeScore(.5),3);assert.equal(core.forgeScore(.99),0);
+});
+
+test('equipment enforces two hands, shields, unique rings and migrates old saves',()=>{
+  const s=core.newSave();s.owned=Object.keys(core.ITEMS);
+  assert.equal(core.stats(s).canBlock,true);
+  assert.equal(core.equip(s,'weapon','greatsword'),true);
+  assert.equal(s.equipment.offhand,null);assert.equal(core.stats(s).canBlock,false);
+  assert.equal(core.equip(s,'offhand','wood-shield'),false);
+  core.equip(s,'weapon','rust-sword');core.equip(s,'offhand','parry-dagger');
+  assert.equal(core.stats(s).canBlock,false);
+  core.equip(s,'offhand','wood-shield');assert.equal(core.stats(s).canBlock,true);
+  core.equip(s,'offhand',null);assert.equal(core.loadSave(JSON.stringify(s)).equipment.offhand,null);
+  core.equip(s,'ring1','moon-ring');assert.equal(core.equip(s,'ring2','moon-ring'),false);
+  const old=core.loadSave(JSON.stringify({owned:['moon-ring'],equipment:{ring:'moon-ring'}}));
+  assert.equal(old.equipment.ring1,'moon-ring');
+  assert.equal(Object.keys(old.equipment).length,10);
+});
+test('enemy defense strengthens with level and opens after counters; rating counts damage and potions',()=>{
+  assert.ok(core.guardReduction(8)>core.guardReduction(1));
+  assert.equal(core.stars({damage:0,potions:0,maxHp:100}),3);
+  assert.equal(core.stars({damage:30,potions:0,maxHp:100}),2);
+  assert.equal(core.stars({damage:0,potions:2,maxHp:100}),1);
+});
+test('opposite slashes parry; matching dodges evade, only inside the timing window', () => {
+  assert.equal(typeof core.defend, 'function');
+  for (const [incoming, opposite] of [['up','down'],['down','up'],['left','right'],['right','left']]) {
+    assert.equal(core.defend(incoming, opposite, 'slash', 100), 'perfect');
+    assert.equal(core.defend(incoming, incoming, 'dodge', 300), 'normal');
+    assert.equal(core.defend(incoming, incoming, 'slash', 100), null);
+  }
+  assert.equal(core.defend('up','down','slash',451), null);
+  assert.equal(core.defend('up','down','slash',-1), null);
+});
+test('gestures distinguish a line, closed circle, square, and spiral', () => {
+  assert.equal(typeof core.recognize, 'function');
+  const circle = Array.from({length:65},(_,i)=>[100+70*Math.cos(i*Math.PI/32),100+70*Math.sin(i*Math.PI/32)]);
+  const spiral = Array.from({length:100},(_,i)=>[100+(10+i*.7)*Math.cos(i*Math.PI/24),100+(10+i*.7)*Math.sin(i*Math.PI/24)]);
+  const square = [[20,20],[80,20],[140,20],[140,80],[140,140],[80,140],[20,140],[20,80],[20,20]];
+  assert.equal(core.recognize(circle),'circle');
+  assert.equal(core.recognize(square),'square');
+  assert.equal(core.recognize(spiral),'spiral');
+  assert.equal(core.recognize([[0,0],[100,0]]),null);
+  assert.equal(core.recognize([[1,1],[2,2]]),null);
+});
+test('shop refuses unaffordable and duplicate purchases; gear and upgrades change stats', () => {
+  assert.equal(typeof core.newSave, 'function');
+  const s=core.newSave(); s.gold=0;
+  assert.equal(core.buy(s,'iron-sword'),false);
+  assert.equal(s.gold,0);
+  s.gold=1000;
+  assert.equal(core.buy(s,'iron-sword'),true);
+  const balance=s.gold;
+  assert.equal(core.buy(s,'iron-sword'),false);
+  assert.equal(s.gold,balance);
+  s.equipment.weapon='iron-sword';
+  assert.ok(core.stats(s).attack>core.stats(core.newSave()).attack);
+});
+test('save loading rejects invalid equipment and clamps corrupt progression',()=>{
+  assert.equal(typeof core.loadSave,'function');
+  const s=core.loadSave('{"gold":-5,"level":999,"unlocked":999,"owned":["hacked"],"equipment":{"weapon":"hacked"}}');
+  assert.equal(s.gold,0); assert.equal(s.unlocked,6); assert.equal(s.level,20);
+  assert.equal(s.equipment.weapon,'rust-sword');
+  assert.deepEqual(core.loadSave('invalid'),core.newSave());
+});
+test('gesture recognition handles squares started mid-edge and an open spiral',()=>{
+  const square=[[80,20],[140,20],[140,80],[140,140],[80,140],[20,140],[20,80],[20,20],[80,20]];
+  const spiral=Array.from({length:90},(_,i)=>[100+(8+i*.8)*Math.cos(i*Math.PI/27),100+(8+i*.8)*Math.sin(i*Math.PI/27)]);
+  assert.equal(core.recognize(square),'square');
+  assert.equal(core.recognize(spiral),'spiral');
+  assert.equal(core.recognize([[0,0],[1,0],[1,1],[0,1],[0,0]]),null);
+});
+test('heavy attacks cannot be parried; sweeps demand a block; guard stops every attack type',()=>{
+  assert.equal(core.defend('up','down','slash',100,'heavy'),null);
+  assert.equal(core.defend('up','up','dodge',100,'heavy'),'perfect');
+  assert.equal(core.defend('up','down','slash',100,'sweep'),null);
+  assert.equal(core.defend('up','up','dodge',100,'sweep'),null);
+  for(const kind of ['normal','heavy','sweep']){
+    const result=core.blockHit(100,kind);
+    assert.equal(result.broken,false);
+    assert.ok(result.stamina<100&&result.stamina>0);
+  }
+});
+test('guard breaks on insufficient or exactly depleted stamina and recovers gradually',()=>{
+  assert.equal(typeof core.blockHit,'function');
+  for(const amount of [0,5,24]){
+    assert.deepEqual(core.blockHit(amount,'normal'),{stamina:0,broken:true});
+  }
+  assert.deepEqual(core.blockHit(25,'normal'),{stamina:1,broken:false});
+  assert.equal(core.regenStamina(98,1,false),100);
+  assert.equal(core.regenStamina(0,1,false),16);
+  assert.equal(core.regenStamina(0,1,true),4);
+});
+test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and pause', async()=>{
+  const nodes=new Map(), events=new Map(), storage=new Map();
+  const imageCalls=[];
+  const drawing=new Proxy({}, {get:(_,key)=>key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
+  const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{setProperty(){}},dataset:{},hidden:true,setAttribute(){},classList:{toggle(){}},addEventListener(type,fn){events.set(id+':'+type,fn);},getContext:()=>drawing,querySelector:()=>node('heading'),getBoundingClientRect:()=>({left:0,top:0,width:240,height:400}),setPointerCapture(){}});return nodes.get(id);};
+  const context=vm.createContext({...core,Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){if(/\/(frost|spider|demon)\.png$/.test(path)){this.naturalWidth=1024;this.naturalHeight=1536;}}},document:{getElementById:node,querySelectorAll:()=>[],addEventListener(){},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
+  const source=(await readFile(new URL('./app.js',import.meta.url),'utf8')).replace(/^import[^\n]+\n/,'');
+  vm.runInContext(source,context);
+  const run=s=>vm.runInContext(s,context);
+  run('enter(1);attack={dir:"up",at:time+100};slash("down")');
+  assert.equal(run('attack'),null);assert.ok(run('stunned>time'));assert.equal(run('hp'),100);
+  const enemyBefore=run('enemy.hp');run('time+=250;slash("left")');assert.ok(run('enemy.hp')<enemyBefore);
+  run('attack={dir:"right",at:time+100};evade("right")');assert.equal(run('attack'),null);
+  run('save.equipment.weapon="ember-staff"');
+  const circle=Array.from({length:65},(_,i)=>[100+60*Math.cos(i*Math.PI/32),100+60*Math.sin(i*Math.PI/32)]);
+  context.rune=circle;run('cast(rune)');const after=run('enemy.hp');run('cast(rune)');assert.equal(run('enemy.hp'),after);
+  context.rune=[[20,20],[100,20],[100,100],[20,100],[20,20]];run('cast(rune)');assert.equal(run('shield'),2);
+  run('attack={dir:"up",at:time};loop(16)');assert.equal(run('hp'),100);assert.equal(run('shield'),1);
+  run('shield=0;attack={dir:"up",at:time};openPanel();loop(32)');assert.equal(run('hp'),100);
+  run('paused=false;loop(48)');assert.ok(run('hp')<100);
+  run('save.equipment.weapon="rust-sword";enter(1)');
+  run('enter(3)');const guardedHp=run('enemy.hp');
+  run('for(let i=0;i<30;i++){time+=230;slash("left")}');assert.equal(run('enemy.hp'),guardedHp,'late enemies must stop blind swipe spam');
+  run('attack={dir:"up",kind:"normal",at:time+300};time+=1;defensive("down","slash");time+=230;slash("left")');assert.ok(run('enemy.hp')<guardedHp);
+  run('enter(1);hp=40;drinkPotion()');assert.equal(run('hp'),90);assert.equal(run('run.potions'),1);assert.equal(run('save.potions'),2);
+  run('enter(1);drinkPotion()');assert.equal(run('save.potions'),2,'full health must not consume potion');
+  for(let floor=1;floor<=6;floor++){
+    const startingGold=run('save.gold');
+    run(`enter(${floor})`);
+    for(let room=0;room<3;room++){
+      for(let strikes=0;strikes<50&&run('phase')==='combat';strikes++)run('attack={dir:"right",kind:"normal",at:time+100};defensive("left","slash");time+=230;slash("left")');
+      assert.equal(run('phase'),'walking');assert.match(nodes.get('rewardToast').innerHTML,/EXP/);assert.equal(nodes.get('rewardToast').hidden,false);
+      const earned=run('save.gold');run('hit(999)');assert.equal(run('save.gold'),earned,'defeated enemy pays once');
+      run('time=rewardUntil+1;hud()');assert.equal(nodes.get('rewardToast').hidden,true);
+      run('loop(last+16)');
+    }
+    assert.equal(run('phase'),'won');assert.equal(run('save.gold')-startingGold,run('run.gold'));assert.ok(run('run.xp')>0);assert.equal(run('run.items.length'),3);assert.equal(run('stars(run)'),3);
+    assert.match(nodes.get('panelBody').innerHTML,/3 of 3 stars/);
+    const balance=run('save.gold');run('loop(last+16)');assert.equal(run('save.gold'),balance);
+  }
+  assert.equal(run('save.unlocked'),6);assert.ok(storage.has('emberblade-v1'));
+  run('enter(3);hp=1;attack={dir:"up",at:time};loop(last+16)');assert.equal(run('phase'),'dead');assert.equal(run('paused'),true);
+  run('enter(3)');assert.equal(run('hp'),100);assert.equal(run('phase'),'combat');
+  run('stamina=100;setBlocking(true);attack={dir:"up",kind:"heavy",at:time};loop(last+16)');
+  assert.equal(run('hp'),100);assert.equal(run('stamina'),58);
+  run('stamina=10;attack={dir:"up",kind:"heavy",at:time};loop(last+16)');
+  assert.ok(run('hp')<100);assert.equal(run('stamina'),0);assert.ok(run('playerStunned>time'));
+  const hurt=run('enemy.hp');run('slash("left");evade("left");setBlocking(true)');
+  assert.equal(run('enemy.hp'),hurt);assert.equal(run('blocking'),false);
+  run('time=playerStunned+1;setBlocking(true)');assert.equal(run('blocking'),true);
+  run('openPanel()');assert.equal(run('blocking'),false);
+  run('enter(1);attack={dir:"up",kind:"sweep",at:time+100};evade("up")');assert.notEqual(run('attack'),null);
+  run('setBlocking(true);attack.at=time;loop(last+16)');assert.equal(run('hp'),100);
+  run('setBlocking(false)');
+  events.get('blockBtn:pointerdown')({pointerId:1,preventDefault(){}});assert.equal(run('blocking'),true);
+  events.get('blockBtn:pointerup')({pointerId:2});assert.equal(run('blocking'),true);
+  events.get('blockBtn:pointercancel')({pointerId:1});assert.equal(run('blocking'),false);
+  run('equip(save,"weapon","ember-staff");enter(1);setBlocking(true)');assert.equal(run('blocking'),false);
+  run('equip(save,"weapon","rust-sword");equip(save,"offhand","wood-shield");enter(1);draw()');
+  assert.ok(imageCalls.some(frame=>frame[0]===run('sprites.guards')),'guard stance must render');
+  imageCalls.length=0;run('hit(10);draw()');
+  assert.ok(imageCalls.some(frame=>frame[0]===run('sprites.guards')&&frame[2]>0),'guard impact must render');
+  for(const type of ['brute','lizard','wraith','knight'])for(const [dir,expectedRow] of [['up',1],['down',2],['left',type==='wraith'?4:3],['right',type==='wraith'?3:4]]){
+    run(`enter(1);enemy.type='${type}';attack={dir:'${dir}',kind:'normal',at:time+900};draw()`);
+    const prep=imageCalls.findLast(frame=>frame[0]===run(`sprites['${type}']`));
+    assert.equal(Math.floor((prep[2]+prep[4]/2)/280.4),expectedRow);
+    run('resolveAttack();draw()');const strike=imageCalls.findLast(frame=>frame[0]===run(`sprites['${type}']`));
+    assert.equal(Math.floor((strike[2]+strike[4]/2)/280.4),expectedRow);
+    assert.notEqual(prep[1],strike[1],'windup and strike must be different frames');
+    for(const frame of [prep,strike]){assert.ok(frame.slice(1).every(Number.isFinite));assert.ok(frame[1]>=0&&frame[2]>=0&&frame[1]+frame[3]<=1122&&frame[2]+frame[4]<=1402);}
+  }
+  for(const [i,type] of ['frost','spider','demon'].entries())for(const dir of ['up','down','left','right']){
+    run(`enter(${i+4});enemy.type='${type}';draw();attack={dir:'${dir}',kind:'normal',at:time+900};draw()`);
+    const prep=imageCalls.findLast(frame=>frame[0]===run(`sprites.${type}`));
+    run('resolveAttack();draw()');const strike=imageCalls.findLast(frame=>frame[0]===run(`sprites.${type}`));
+    assert.notEqual(prep[1],strike[1]);
+    for(const frame of [prep,strike])assert.ok(frame[1]>=0&&frame[2]>=0&&frame[1]+frame[3]<=1024&&frame[2]+frame[4]<=1536);
+  }
+  run('save=newSave()');
+  for(let f=1;f<=6;f++){
+    run(`enter(${f})`);
+    // Play the actual scheduler at 60 fps with starter gear, without injecting enemies or damage.
+    run(`for(let frames=0;frames<18000&&!['won','dead'].includes(phase);frames++){
+      loop(last+16);
+      if(attack&&attack.at-time<=130){if(attack.kind==='sweep')setBlocking(true);else if(attack.kind==='heavy')evade(attack.dir);else slash(DIR[attack.dir]);}
+      else if(!attack){setBlocking(false);if(enemy.openUntil>time)slash('left');}
+    }`);
+    assert.equal(run('phase'),'won',`starter equipment can finish floor ${f} using correctly timed defenses`);
+    assert.equal(run('run.damage'),0);
+  }
+});
