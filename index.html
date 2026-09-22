@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#150e22"><title>Emberblade</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="game" aria-label="Emberblade">
+    <canvas id="scene" aria-label="Combat scene"></canvas>
+    <section id="hud">
+      <div class="topbar"><button id="heroBtn" class="portrait" aria-label="Open character equipment">⚔</button><div class="health"><b>VANGUARD</b><i><span id="playerHp"></span></i></div><div class="coins">◈ <span id="gold">0</span></div></div>
+      <div class="enemybar"><b id="enemyName">Warden</b><i><span id="enemyHp"></span></i></div>
+      <div class="stamina"><span>GUARD STAMINA</span><span id="staminaValue">100 / 100</span><i id="staminaBar" role="progressbar" aria-label="Block stamina" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><span id="staminaFill"></span></i></div>
+      <div id="telegraph" class="telegraph" aria-live="polite"><span class="attackDiamond"><span id="attackArrow"></span></span><small id="attackRule"></small></div>
+      <div id="message" class="message">Draw a slash to strike.</div>
+      <div id="spellHint" class="spellhint" hidden>Staff: draw ○ flame · □ ward · spiral nova</div>
+      <div class="stageTag">FLOOR <span id="floor">1 / 3 · ROOM 1</span></div>
+    </section>
+    <div id="dodgePad" aria-label="Dodge directions"><button data-dodge="up">▲</button><button data-dodge="left">◀</button><button data-dodge="right">▶</button><button data-dodge="down">▼</button></div>
+    <button id="blockBtn" class="blockButton" aria-label="Hold shield to block" aria-pressed="false"><svg viewBox="0 0 32 36" aria-hidden="true"><path d="M3 5L16 1L29 5V19Q29 28 16 35Q3 28 3 19Z"/><path d="M16 7V28M8 15H24"/></svg><span id="blockLabel">HOLD BLOCK</span></button>
+    <button id="menuBtn" class="menu" aria-label="Open character screen">☰</button>
+    <section id="panel" class="panel" hidden><div class="sheet"><button class="close" data-close>×</button><h1>VANGUARD</h1><div id="statline" class="statline"></div><div class="tabs"><button data-tab="gear" class="active">GEAR</button><button data-tab="shop">FORGE</button></div><div id="panelBody"></div><button id="nextFloor" class="primary" hidden>ENTER NEXT FLOOR</button></div></section>
+    <section id="intro" class="panel"><div class="sheet intro"><p class="eyebrow">EMBERBLADE</p><h1>THE ASHEN HALLS</h1><p>ลากนิ้วกลางจอเพื่อฟัน 4 ทิศ<br>ปัดสวนลูกศรเพื่อ parry · กดหลบตามลูกศร</p><p>ลูกศรกลางตัวศัตรู:<br>แดง = PARRY / DODGE<br>ทอง = DODGE / BLOCK · parry ไม่ได้<br>ฟ้า = BLOCK ONLY · หลบไม่ได้</p><p>กดโล่ค้างเพื่อบล็อกทุกท่า<br>Stamina หมด = เสียเลือดและสตั้น<br>ปล่อยโล่เพื่อฟื้น stamina เร็วขึ้น</p><p>Staff: วาด ○ ไฟ · □ โล่เวท · ◎ ก้นหอย</p><p id="assetStatus" role="status">Loading enemy sprites…</p><button id="start" class="primary" disabled>ENTER THE HALLS</button></div></section>
+  </main><script type="module" src="app.js"></script>
+</body>
+</html>
