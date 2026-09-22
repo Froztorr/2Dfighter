@@ -17,10 +17,10 @@ test('daily quests reset at Bangkok midnight and pay once, minigame prizes are c
   assert.equal(core.finishMini(s,'forge',999,after),null);
   assert.equal(core.daily(core.loadSave(JSON.stringify(s)),after).plays.forge,3);
 });
-test('campaign content has six playable floors and valid new equipment drops',()=>{
-  assert.equal(core.FLOORS.length,6);
+test('campaign content has nine playable floors and valid new equipment drops',()=>{
+  assert.equal(core.FLOORS.length,9);
   for(const floor of core.FLOORS){assert.equal(floor.enemies.length,3);for(const id of floor.drops)assert.ok(core.ITEMS[id]);}
-  const s=core.loadSave(JSON.stringify({...core.newSave(),unlocked:6}));assert.equal(s.unlocked,6);
+  const s=core.loadSave(JSON.stringify({...core.newSave(),unlocked:9}));assert.equal(s.unlocked,9);
   assert.equal(core.forgeScore(.5),3);assert.equal(core.forgeScore(.99),0);
 });
 
@@ -82,7 +82,7 @@ test('shop refuses unaffordable and duplicate purchases; gear and upgrades chang
 test('save loading rejects invalid equipment and clamps corrupt progression',()=>{
   assert.equal(typeof core.loadSave,'function');
   const s=core.loadSave('{"gold":-5,"level":999,"unlocked":999,"owned":["hacked"],"equipment":{"weapon":"hacked"}}');
-  assert.equal(s.gold,0); assert.equal(s.unlocked,6); assert.equal(s.level,20);
+  assert.equal(s.gold,0); assert.equal(s.unlocked,9); assert.equal(s.level,20);
   assert.equal(s.equipment.weapon,'rust-sword');
   assert.deepEqual(core.loadSave('invalid'),core.newSave());
 });
@@ -114,7 +114,7 @@ test('guard breaks on insufficient or exactly depleted stamina and recovers grad
   assert.equal(core.regenStamina(0,1,false),16);
   assert.equal(core.regenStamina(0,1,true),4);
 });
-test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and pause', async()=>{
+test('real game loop: nine floors, parry stun, dodge, spells, rewards, death, and pause', async()=>{
   const nodes=new Map(), events=new Map(), storage=new Map();
   const imageCalls=[];
   const drawing=new Proxy({}, {get:(_,key)=>key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
@@ -140,7 +140,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   run('attack={dir:"up",kind:"normal",at:time+300};time+=1;defensive("down","slash");time+=230;slash("left")');assert.ok(run('enemy.hp')<guardedHp);
   run('enter(1);hp=40;drinkPotion()');assert.equal(run('hp'),90);assert.equal(run('run.potions'),1);assert.equal(run('save.potions'),2);
   run('enter(1);drinkPotion()');assert.equal(run('save.potions'),2,'full health must not consume potion');
-  for(let floor=1;floor<=6;floor++){
+  for(let floor=1;floor<=core.FLOORS.length;floor++){
     const startingGold=run('save.gold');
     run(`enter(${floor})`);
     for(let room=0;room<3;room++){
@@ -154,7 +154,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
     assert.match(nodes.get('panelBody').innerHTML,/3 of 3 stars/);
     const balance=run('save.gold');run('loop(last+16)');assert.equal(run('save.gold'),balance);
   }
-  assert.equal(run('save.unlocked'),6);assert.ok(storage.has('emberblade-v1'));
+  assert.equal(run('save.unlocked'),9);assert.ok(storage.has('emberblade-v1'));
   run('enter(3);hp=1;attack={dir:"up",at:time};loop(last+16)');assert.equal(run('phase'),'dead');assert.equal(run('paused'),true);
   run('enter(3)');assert.equal(run('hp'),100);assert.equal(run('phase'),'combat');
   run('stamina=100;setBlocking(true);attack={dir:"up",kind:"heavy",at:time};loop(last+16)');
@@ -193,7 +193,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
     for(const frame of [prep,strike])assert.ok(frame[1]>=0&&frame[2]>=0&&frame[1]+frame[3]<=1024&&frame[2]+frame[4]<=1536);
   }
   run('save=newSave()');
-  for(let f=1;f<=6;f++){
+  for(let f=1;f<=core.FLOORS.length;f++){
     run(`enter(${f})`);
     // Play the actual scheduler at 60 fps with starter gear, without injecting enemies or damage.
     run(`for(let frames=0;frames<18000&&!['won','dead'].includes(phase);frames++){
@@ -203,5 +203,28 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
     }`);
     assert.equal(run('phase'),'won',`starter equipment can finish floor ${f} using correctly timed defenses`);
     assert.equal(run('run.damage'),0);
+  }
+});
+
+
+test('expansion variants use valid atlases and rules; all new equipment survives save reload',()=>{
+  for(const [id,v] of Object.entries(core.ENEMY_VARIANTS)){
+    assert.ok(['frost','spider','demon'].includes(v.sprite));
+    assert.ok(v.pattern.every(kind=>core.ATTACKS[kind]));
+    assert.deepEqual([...v.directions].sort(),Object.keys(core.DIR).sort());
+    assert.ok(core.FLOORS.some(f=>f.enemies.includes(id)));
+  }
+  const old=core.newSave();old.unlocked=6;old.bestStars={6:3};
+  const restored=core.loadSave(JSON.stringify(old));
+  assert.equal(restored.unlocked,6);assert.equal(restored.bestStars[6],3);
+  const ids=Object.keys(core.ITEMS).filter(id=>/^(storm|tidal|eclipse)-/.test(id));
+  assert.equal(ids.length,12);
+  for(const id of ids){
+    const save=core.newSave();save.gold=2000;
+    assert.ok(core.buy(save,id));
+    const item=core.ITEMS[id],slot=item.slot==='ring'?'ring1':item.slot;
+    assert.ok(core.equip(save,slot,id));
+    assert.equal(core.loadSave(JSON.stringify(save)).equipment[slot],id);
+    if(item.hands===2){assert.equal(save.equipment.offhand,null);assert.equal(core.stats(save).canBlock,false);}
   }
 });
