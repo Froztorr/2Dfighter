@@ -1,11 +1,11 @@
-import { ITEMS, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
+import { ITEMS, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('scene'), ctx = canvas.getContext('2d');
 canvas.width = 480; canvas.height = 800;
-const sprites = Object.fromEntries(['brute','lizard','wraith','knight'].map(name => [name, new Image()]));
+const sprites = Object.fromEntries(['brute','lizard','wraith','knight','gear','hero','guards'].map(name => [name, new Image()]));
 let spritesLoaded = 0;
 for (const [name, image] of Object.entries(sprites)) {
-  image.onload = () => { spritesLoaded++; if (spritesLoaded===4) { $('start').disabled=false; $('assetStatus').textContent=''; } };
+  image.onload = () => { spritesLoaded++; if (spritesLoaded===7) { $('start').disabled=false; $('assetStatus').textContent=''; } };
   image.onerror = () => { $('assetStatus').textContent='โหลดภาพไม่สำเร็จ กรุณารีเฟรช'; };
   image.src = `./assets/${name}.png`;
 }
@@ -15,6 +15,8 @@ let floor = 1, room = 0, hp = stats(save).maxHp, enemy, phase = 'intro', paused 
 let time = 0, last = performance.now(), attack = null, nextAttack = 1800, stunned = 0, nextSlash = 0, nextDodge = 0;
 let trail = [], pointer = null, effects = [], flash = 0, swing = 0, dodge = null, shield = 0, cooldown = {}, transition = 0;
 let stamina=100, blocking=false, guardPointer=null, guardKey=false, playerStunned=0, regenAt=0, attackCount=0;
+let selectedSlot='weapon', rewardUntil=0, run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:100};
+const cueIcons={normal:'<path d="M23 3l-3 13-9 9-4-4 9-9Z M5 19l8 8 M8 24l-5 5"/>',heavy:'<path d="M4 5L16 2l12 3v12q0 9-12 14Q4 26 4 17Z M16 8v16M10 15h12"/>',sweep:'<path d="M6 23C-3 7 7 2 16 2s19 5 10 21l-5 1v6H11v-6Z"/><path class="skullEyes" d="M8 12l6 3-6 3ZM24 12l-6 3 6 3ZM16 19l-2 4h4Z"/>'};
 const arrows = { up: '↑', down: '↓', left: '←', right: '→' };
 const floors = ['THE ASHEN HALLS', 'MOSSBOUND CRYPT', 'THE EMBER THRONE'];
 const enemyTypes = { brute:'Grotto Brute', lizard:'Scale Reaver', wraith:'Cinder Wraith', knight:'Crimson Warden' };
@@ -31,7 +33,7 @@ function say(text) { $('message').textContent = text; }
 function spawn() {
   const max = 65 + floor * 15 + room * 12 + (room === 2 ? 65 : 0);
   const type=encounters[floor-1][room];
-  enemy = { hp: max, max, type, name: enemyTypes[type]+(room===2?' • BOSS':''), hit: 0, strikeUntil:0, recoverUntil:0, dir:'down' };
+  enemy = { hp: max, max, type, level:(floor-1)*3+room+1, openUntil:0, guardHit:0, name: enemyTypes[type]+(room===2?' • BOSS':''), hit: 0, strikeUntil:0, recoverUntil:0, dir:'down' };
   attack = null; stunned = 0; nextAttack = time + 1700; phase = 'combat';
   say(room === 0 ? 'ลากนิ้วฟัน • ปัดสวนลูกศรเพื่อ parry' : 'Room cleared. Moving deeper…'); hud();
 }
@@ -44,9 +46,14 @@ function hud() {
   $('blockBtn').classList.toggle('held',blocking);
   $('blockBtn').classList.toggle('broken',playerStunned>time);
   $('blockBtn').setAttribute('aria-pressed',String(blocking));
-  $('blockLabel').textContent=playerStunned>time?'STUNNED':blocking?'GUARDING':'HOLD BLOCK';
+  $('blockBtn').disabled=!s.canBlock;
+  $('blockLabel').textContent=!s.canBlock?'NO SHIELD':playerStunned>time?'STUNNED':blocking?'GUARDING':'HOLD BLOCK';
+  $('potionBtn').textContent=`✚ ${save.potions}`;
+  $('potionBtn').disabled=phase!=='combat'||paused||hp>=s.maxHp||!save.potions||playerStunned>time;
+  $('rewardToast').hidden=time>=rewardUntil;
   $('enemyHp').style.width = `${Math.max(0,(enemy?.hp || 0)/(enemy?.max || 1)*100)}%`;
-  $('enemyName').textContent = enemy?.name || 'THE ASHEN HALLS';
+  $('enemyName').textContent = enemy ? `LV ${enemy.level} · ${enemy.name}` : 'THE ASHEN HALLS';
+  $('guardState').textContent=phase==='combat'?(enemy.openUntil>time?'OPEN · STRIKE!':`GUARD ${Math.round(guardReduction(enemy.level)*100)}%`):'';
   $('gold').textContent = save.gold; $('floor').textContent = `${floor} / 3 · ROOM ${room+1}`;
   $('spellHint').hidden = !s.magic;
   const cue = $('telegraph'), kind=attack?.kind || 'normal';
@@ -54,33 +61,47 @@ function hud() {
   $('attackRule').textContent=attack ? ATTACKS[kind].label : '';
   cue.style.setProperty('--cue-color',ATTACKS[kind].color);
   cue.dataset.kind=kind;
+  if($('attackIcon').dataset.kind!==kind){$('attackIcon').innerHTML=cueIcons[kind];$('attackIcon').dataset.kind=kind;}
   cue.style.left='60%'; cue.style.top=`${(enemyPosition().y+(attack?.dir==='up'?16:0))/4}%`;
   cue.classList.toggle('show', !!attack); cue.classList.toggle('danger', !!attack && attack.at-time <= 450);
   if (s.magic) $('spellHint').textContent = ['circle','square','spiral'].map((k,i) => `${['○ FIRE','□ WARD','◎ NOVA'][i]} ${cooldown[k]>time ? ((cooldown[k]-time)/1000).toFixed(1)+'s' : 'READY'}`).join(' · ');
 }
 function hit(damage, color = '#fff0ae') {
   if (phase !== 'combat') return;
+  if(time>=enemy.openUntil&&time>=stunned){
+    damage=Math.floor(damage*(1-guardReduction(enemy.level)));enemy.guardHit=time+280;
+    say('GUARDED · parry / หลบ แล้วสวนตอน OPEN');
+  }
+  if(!damage){effects.push({x:118,y:190,text:'BLOCK',color:'#91cce1',until:time+450});return;}
   enemy.hp = Math.max(0,enemy.hp-damage); enemy.hit = time+130;
   effects.push({ x:145, y:190, text:String(damage), color, until:time+700 });
   if (!enemy.hp) {
-    attack = null; phase = 'walking'; transition = time+1000; say('ENEMY DEFEATED');
+    attack = null; phase = 'walking'; transition = time+1500; say('ENEMY DEFEATED');
+    const gold=20+enemy.level*5,xp=25+enemy.level*10;
+    const drops=[['rogue-hood','trail-boots','wolf-helm'],['mage-hat','mage-pants','iron-greaves'],['astral-cloak','arcane-pendant','moon-ring']];
+    const loot=drops[floor-1][room],duplicate=save.owned.includes(loot),total=gold+(duplicate?30:0);
+    save.gold+=total;save.xp+=xp;run.gold+=total;run.xp+=xp;
+    if(!duplicate){save.owned.push(loot);run.items.push(loot);}
+    while(save.xp>=save.level*100&&save.level<20){save.xp-=save.level*100;save.level++;}
+    $('rewardToast').innerHTML=`<b>VICTORY</b><span>+${xp} EXP · +${total} GOLD</span><span>${duplicate?'Duplicate → +30 gold':ITEMS[loot].name}</span>`;
+    rewardUntil=time+2800;persist();
   }
   hud();
 }
 function finishRoom() {
+  if(phase!=='walking')return;
   if (room < 2) { room++; spawn(); return; }
   const reward = 150 + floor*70;
-  save.gold += reward; save.level = Math.min(20,save.level+1); save.unlocked = Math.min(3,Math.max(save.unlocked,floor+1));
-  const loot = ['wolf-helm','iron-greaves','moon-ring'][floor-1];
-  const duplicate = save.owned.includes(loot); if (!duplicate) save.owned.push(loot); else save.gold += 50;
+  save.gold += reward;run.gold+=reward;save.unlocked = Math.min(3,Math.max(save.unlocked,floor+1));
   phase = 'won'; hp = stats(save).maxHp; persist();
-  say(`CLEAR +${reward}${duplicate?' +50':''} GOLD · ${ITEMS[loot].name}`); openPanel();
+  say(`CLEAR +${reward} GOLD`); openPanel();
 }
 function defensive(dir,type) {
   if (!attack) return false;
   const result = defend(attack.dir,dir,type,attack.at-time,attack.kind);
   if (!result) return false;
   attack = null; stunned = result==='perfect' ? time+2100 : 0; nextAttack = time+(result==='perfect'?2900:1300);
+  enemy.openUntil=result==='perfect'?stunned:time+Math.max(600,1150-enemy.level*55);
   say(`${result==='perfect'?'PERFECT ':''}${type==='dodge'?'DODGE':'PARRY'}${result==='perfect'?' · STUNNED!':''}`);
   effects.push({x:140,y:175,text:'✦',color:'#c6ffff',until:time+550});
   return true;
@@ -103,35 +124,44 @@ function cast(points) {
   if (cooldown[spell]>time) { say('Spell cooling down'); return; }
   cooldown[spell] = time + ({circle:1800,square:6500,spiral:4500}[spell]);
   if (spell==='square') { shield = 2; say('WARD · blocks the next 2 hits'); }
-  else { hit(Math.round(stats(save).attack*(spell==='spiral'?4:2.5)), '#bdabff'); say(spell==='spiral'?'ARCANE NOVA':'EMBER ORB'); }
+  else { say(spell==='spiral'?'ARCANE NOVA':'EMBER ORB');hit(Math.round(stats(save).attack*(spell==='spiral'?4:2.5)), '#bdabff'); }
   effects.push({x:140,y:210,text:spell==='square'?'◇':'✺',color:'#bb9aff',until:time+850});
 }
 function setBlocking(value) {
-  blocking = !!value && phase==='combat' && !paused && time>=playerStunned;
+  blocking = !!value && stats(save).canBlock && phase==='combat' && !paused && time>=playerStunned;
   if (blocking) { pointer=null;trail=[]; }
 }
 function releaseGuard() { guardPointer=null;guardKey=false;setBlocking(false); }
 function openPanel() { paused = true; releaseGuard(); pointer=null; trail=[]; $('panel').hidden=false; renderPanel(); }
+function itemIcon(id){const i=ITEMS[id];return i?`<span class="gearIcon" style="background-position:${i.icon%6*20}% ${Math.floor(i.icon/6)*20}%"></span>`:'<span class="emptySlot">＋</span>';}
+function itemStats(i){return [i.attack?`ATK +${i.attack}`:'',i.armor?`DEF +${i.armor}`:'',i.health?`HP +${i.health}`:'',i.hands===2?'2 HANDS':i.shield?'BLOCK':''].filter(Boolean).join(' · ');}
 function renderPanel() {
   const s=stats(save);
   $('statline').textContent=`LV ${save.level} · ATK ${s.attack} · DEF ${s.armor} · HP ${Math.ceil(hp)}/${s.maxHp} · ◈ ${save.gold}`;
   $('panel').querySelector('h1').textContent = phase==='won'?'FLOOR CLEARED':phase==='dead'?'YOU FELL':'VANGUARD';
   $('nextFloor').hidden = !['won','dead'].includes(phase);
   $('nextFloor').textContent = phase==='dead'?'RETRY FLOOR':floor===3?'RETURN TO FLOOR 1':'ENTER NEXT FLOOR';
-  const gear = Object.entries(save.equipment).map(([slot,id])=>`<div class="slot"><b>${slot.toUpperCase()}</b><span>${ITEMS[id]?.name || 'Empty'}</span><button data-equip="${slot}">CHANGE</button></div>`).join('');
+  const slotButton=slot=>{const id=save.equipment[slot],locked=slot==='offhand'&&ITEMS[save.equipment.weapon]?.hands===2;return `<button class="gearSlot ${selectedSlot===slot?'selected':''}" data-slot="${slot}" aria-label="${SLOTS[slot]}: ${locked?'Locked':ITEMS[id]?.name||'Empty'}" ${locked?'disabled':''}><small>${SLOTS[slot]}</small>${locked?'<span class="emptySlot">🔒</span>':itemIcon(id)}<span>${locked?'TWO HANDED':ITEMS[id]?.name||'Empty'}</span></button>`;};
+  const gear=`<div class="paperDoll"><div>${['helm','armor','pants','boots'].map(slotButton).join('')}</div><div class="heroDisplay"><canvas id="heroPreview" width="240" height="400" aria-label="Equipped character preview"></canvas><b>${s.magic?'ARCANIST':s.canBlock?'VANGUARD':'DUELIST'}</b><small>${s.canBlock?'SHIELD READY':'NO SHIELD · DODGE / WARD'}</small></div><div>${['weapon','offhand','neck','cloak'].map(slotButton).join('')}</div></div><div class="ringSlots">${['ring1','ring2'].map(slotButton).join('')}</div><div class="inventoryTitle">${SLOTS[selectedSlot]} <span>เลือกเพื่อสวมใส่</span></div><div class="inventory">${save.owned.filter(id=>ITEMS[id].slot===(selectedSlot.startsWith('ring')?'ring':selectedSlot)).map(id=>`<button class="inventoryItem ${save.equipment[selectedSlot]===id?'selected':''}" data-item="${id}">${itemIcon(id)}<b>${ITEMS[id].name}</b><small>${itemStats(ITEMS[id])}</small></button>`).join('')}<button class="inventoryItem" data-unequip="${selectedSlot}">ถอดอุปกรณ์</button></div><p class="gearHelp">สองมือจะล็อกช่องรอง • ต้องถือโล่จึงบล็อกได้<br>Staff: วาด □ เพื่อสร้าง WARD รับได้ 2 ครั้ง</p>`;
   const upgrades = ['vigor','edge'].map(k=>`<div class="upgrade">${k.toUpperCase()} ${save.upgrades[k]}/10<button data-upgrade="${k}" ${save.upgrades[k]>=10?'disabled':''}>◈ ${80+save.upgrades[k]*50}</button></div>`).join('');
   const choices = Array.from({length:save.unlocked},(_,i)=>`<button class="floorChoice" data-floor="${i+1}">${i+1} · ${floors[i]}</button>`).join('');
-  $('panelBody').innerHTML = tab==='gear' ? gear + '<p>Staff starts unlocked: change WEAPON to try magic.</p><div class="upgrade">Vigor +12 HP / Edge +2 ATK</div>' + upgrades + '<p>Unlocked floors</p>' + choices : Object.entries(ITEMS).map(([id,item])=>`<div class="item"><h3>${item.name}</h3><p>${item.slot} · ${item.attack?'ATK +'+item.attack:'DEF +'+item.armor}</p><button data-buy="${id}" ${save.owned.includes(id)||save.gold<item.cost?'disabled':''}>${save.owned.includes(id)?'OWNED':'◈ '+item.cost}</button></div>`).join('');
+  const summary=phase==='won'?`<section class="clearSummary"><div class="stars" aria-label="${stars(run)} of 3 stars">${'★'.repeat(stars(run))}<span>${'★'.repeat(3-stars(run))}</span></div><h2>${floors[floor-1]}</h2><b>+${run.xp} EXP · +${run.gold} GOLD</b><p>Damage ${run.damage} · Potions ${run.potions}</p><small>★★★ ไม่เสีย HP / ไม่ใช้ยา<br>★★ เสีย HP ≤ ${Math.round(run.maxHp*.5)} / ใช้ยา ≤ 1</small><div class="lootList">${run.items.map(id=>`<div>${itemIcon(id)}${ITEMS[id].name} ×1</div>`).join('')}</div></section>`:'';
+  $('panelBody').innerHTML = summary+(tab==='gear' ? gear + `<p>EXP ${save.xp} / ${save.level*100}</p><div class="upgrade">Vigor +12 HP / Edge +2 ATK</div>` + upgrades + '<p>Unlocked floors</p>' + choices : `<div class="inventory">${Object.entries(ITEMS).map(([id,item])=>`<button class="inventoryItem" data-buy="${id}" ${save.owned.includes(id)||save.gold<item.cost?'disabled':''}>${itemIcon(id)}<b>${item.name}</b><small>${itemStats(item)}</small><span>${save.owned.includes(id)?'OWNED':'◈ '+item.cost}</span></button>`).join('')}</div><button class="primary" data-potion-buy ${save.gold<40||save.potions>=99?'disabled':''}>HEALING POTION · 40 GOLD</button>`);
+  if(tab==='gear'){const preview=$('heroPreview');drawHero(preview.getContext('2d'),120,200,240,false);}
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); hud();
 }
-function enter(n) { floor=n;room=0;hp=stats(save).maxHp;shield=0;cooldown={};nextSlash=nextDodge=0;stamina=100;playerStunned=regenAt=attackCount=0;releaseGuard();paused=false;$('panel').hidden=true;spawn(); }
+function enter(n) { floor=n;room=0;hp=stats(save).maxHp;run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:hp};rewardUntil=0;shield=0;cooldown={};nextSlash=nextDodge=0;stamina=100;playerStunned=regenAt=attackCount=0;releaseGuard();paused=false;$('panel').hidden=true;spawn(); }
+function drinkPotion(){if(phase!=='combat'||paused||playerStunned>time||hp>=stats(save).maxHp||!save.potions)return;save.potions--;run.potions++;hp=Math.min(stats(save).maxHp,hp+50);say('+50 HP · HEALING POTION');persist();hud();}
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   if(b.id==='start'){$('intro').hidden=true;enter(1);}
   if(b.id==='heroBtn'||b.id==='menuBtn')openPanel();
   if(b.hasAttribute('data-close')){ $('panel').hidden=true;paused=false; }
   if(b.dataset.tab){tab=b.dataset.tab;renderPanel();}
-  if(b.dataset.equip){const slot=b.dataset.equip, owned=save.owned.filter(id=>ITEMS[id]?.slot===slot);if(owned.length){save.equipment[slot]=owned[(owned.indexOf(save.equipment[slot])+1)%owned.length];hp=Math.min(hp,stats(save).maxHp);persist();renderPanel();}}
+  if(b.dataset.slot){selectedSlot=b.dataset.slot;renderPanel();}
+  if(b.dataset.item||b.dataset.unequip){if(equip(save,b.dataset.unequip||selectedSlot,b.dataset.item||null)){hp=Math.min(hp,stats(save).maxHp);persist();renderPanel();$('panel').querySelector('.sheet').scrollTop=0;}}
+  if(b.id==='potionBtn')drinkPotion();
+  if(b.hasAttribute('data-potion-buy')&&save.gold>=40&&save.potions<99){save.gold-=40;save.potions++;persist();renderPanel();}
   if(b.dataset.buy && buy(save,b.dataset.buy)){persist();renderPanel();}
   if(b.dataset.upgrade){const k=b.dataset.upgrade,cost=80+save.upgrades[k]*50;if(save.upgrades[k]<10 && save.gold>=cost){save.gold-=cost;save.upgrades[k]++;if(k==='vigor')hp+=12;persist();renderPanel();}}
   if(b.dataset.floor)enter(Number(b.dataset.floor));
@@ -154,34 +184,31 @@ window.addEventListener('blur',releaseGuard);
 document.addEventListener('visibilitychange',()=>{last=performance.now();if(document.hidden&&phase==='combat')openPanel();});
 function rect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h);}
 function poly(points,c){ctx.fillStyle=c;ctx.beginPath();points.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill();}
-function character(x,y,scale,back=false,boss=false){
-  ctx.save();ctx.translate(Math.round(x),Math.round(y));ctx.scale(scale,scale);
-  const color=back?(save.equipment.armor?'#78919b':'#547581'):room===0?'#7c7972':floor===2?'#5c7961':'#77567d',light=back?'#99b9af':'#be9b9a';
-  ctx.fillStyle='#100e1d88';ctx.beginPath();ctx.ellipse(0,38,21,6,0,0,7);ctx.fill();
-  rect(-12,21,9,15,'#252836');rect(4,21,9,15,'#252836');rect(-14,34,12,5,'#131a29');rect(3,34,13,5,'#131a29');
-  poly([[-17,-2],[14,-2],[18,23],[9,27],[-14,25]],'#242139');
-  rect(-13,-4,27,25,color);rect(-13,-4,5,20,light);rect(-8,-4,17,4,'#bdd0b7');rect(8,0,7,19,'#344455');
-  rect(-20,-2,10,9,light);rect(12,-2,10,9,color);rect(-20,7,6,15,color);rect(16,7,6,15,'#333346');rect(-19,20,7,6,'#b99a80');rect(16,20,7,6,'#b99a80');
-  rect(-10,-22,21,18,'#34384c');rect(-8,-25,16,4,light);rect(-10,-21,6,14,light);rect(-4,-20,13,9,color);rect(9,-20,3,13,'#272335');
-  if(back){poly([[-10,-8],[11,-8],[17,27],[0,31],[-15,26]],'#752e48');poly([[-9,-7],[-2,-6],[-3,26],[-14,25]],'#be5361');rect(-4,-17,8,11,'#456575');}
-  else{rect(-6,-13,14,6,'#191623');rect(-5,-12,4,2,'#ffbe65');rect(4,-12,4,2,'#ffbe65');rect(-3,-6,8,2,'#dfbd98');}
-  rect(-13,20,27,4,'#332237');rect(-2,20,5,4,'#e4b268');
-  if(back){
-    if(save.equipment.helm){rect(-8,-26,18,3,'#dbc49e');rect(-2,-31,5,7,'#c35765');}
-    if(save.equipment.pants){rect(-11,26,7,7,'#83979c');rect(5,26,7,7,'#697c86');}
-    if(save.equipment.boots){rect(-13,35,10,2,'#d2ad7c');rect(4,35,10,2,'#d2ad7c');}
-    if(save.equipment.ring)rect(20,22,3,3,'#e5d178');
-    rect(-9,-2,3,17,'#d27678');rect(-5,22,9,2,'#8f3a53');
-  }else{
-    rect(-10,5,18,2,'#4a3d4e');rect(-8,10,16,2,'#4a3d4e');rect(-6,15,12,2,'#4a3d4e');
-    rect(-17,0,3,2,'#e1c4a1');rect(16,0,3,2,'#ad8d80');
-    if(room===0){rect(-6,-14,14,7,'#b7ae95');rect(-5,-13,4,3,'#252130');rect(4,-13,3,3,'#252130');rect(-2,-7,2,2,'#161526');}
-    if(room===1){poly([[-13,-16],[-6,-29],[7,-29],[15,-16],[8,-21],[-6,-21]],'#7a364e');}
+function gearSprite(context,id,x,y,w,h=w,angle=0){
+  const item=ITEMS[id],sheet=sprites.gear;if(!item||!sheet.complete||!sheet.naturalWidth)return;
+  const cell=sheet.naturalWidth/6;
+  context.save();context.translate(x,y);context.rotate(angle);context.drawImage(sheet,item.icon%6*cell,Math.floor(item.icon/6)*sheet.naturalHeight/6,cell,sheet.naturalHeight/6,-w/2,-h/2,w,h);context.restore();
+}
+function drawHero(context,x,y,size,back){
+  const sheet=sprites.hero;if(!sheet.complete||!sheet.naturalWidth)return;
+  const cw=sheet.naturalWidth/4,ch=sheet.naturalHeight/2,height=size*ch/cw;
+  context.save();context.imageSmoothingEnabled=false;
+  const left=x-size/2,top=y-height/2;
+  gearSprite(context,save.equipment.cloak,x,y+height*.07,size*.65,height*.65);
+  // Aligned atlas strips allow each armor slot to change independently.
+  for(const [slot,a,b] of [['boots',.77,1],['pants',.55,.77],['armor',.28,.55],['helm',0,.28]]){
+    const look=ITEMS[save.equipment[slot]]?.look||0;
+    context.drawImage(sheet,look*cw,(back?ch:0)+a*ch,cw,(b-a)*ch,left,top+a*height,size,(b-a)*height);
   }
-  if(boss){poly([[-10,-21],[-20,-31],[-17,-15]],'#dfb57e');poly([[10,-21],[20,-31],[17,-15]],'#9c775e');}
-  if(back&&stats(save).magic){rect(24,-22,3,49,'#ac794c');rect(21,-28,9,9,'#aa80ed');rect(23,-26,4,4,'#eff3ff');}
-  else{rect(25,-24,4,44,'#b7c9c7');rect(25,-24,2,40,'#edf3d4');poly([[25,-24],[29,-24],[27,-31]],'#eef4d4');rect(20,17,14,3,'#d8b060');rect(26,20,3,9,'#66504b');}
-  ctx.restore();
+  // Cloaks are visible over the torso in rear combat view.
+  if(back)gearSprite(context,save.equipment.cloak,x,y+height*.03,size*.51,height*.61);
+  gearSprite(context,save.equipment.neck,x,y-height*.22,size*.14);
+  gearSprite(context,save.equipment.ring1,x-size*.25,y+height*.03,size*.065);
+  gearSprite(context,save.equipment.ring2,x+size*.25,y+height*.03,size*.065);
+  const main=ITEMS[save.equipment.weapon];
+  gearSprite(context,save.equipment.weapon,x+size*.3,y+(back&&swing>time?-height*.08:0),size*(main?.hands===2?.63:.46),height*(main?.hands===2?.7:.48),back&&swing>time?.8:0);
+  if(main?.hands!==2)gearSprite(context,save.equipment.offhand,x-size*(back&&blocking?.18:.3),y+height*.05,size*.39,height*.36);
+  context.restore();
 }
 function enemyPosition() {
   const impact = enemy?.strikeUntil>time ? Math.sin((enemy.strikeUntil-time)/180*Math.PI)*8 : 0;
@@ -190,6 +217,11 @@ function enemyPosition() {
 function drawEnemy() {
   const sheet=sprites[enemy?.type || 'brute'];
   if(!sheet.complete || !sheet.naturalWidth)return;
+  if(phase==='combat'&&stunned<=time&&enemy.openUntil<=time&&((!attack&&enemy.recoverUntil<=time)||enemy.guardHit>time)){
+    const guard=sprites.guards,{x,y}=enemyPosition(),column=Object.keys(enemyTypes).indexOf(enemy.type),row=enemy.guardHit>time?1:0;
+    const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400),size=room===2?158:143;
+    if(guard.complete&&guard.naturalWidth){ctx.drawImage(guard,column*guard.naturalWidth/4,row*guard.naturalHeight/2,guard.naturalWidth/4,guard.naturalHeight/2,x-size/2,y-size*aspect/2,size,size*aspect);return;}
+  }
   let row=0, column=Math.floor(time/360)%2;
   if(phase==='walking')column=3;
   else if(stunned>time)column=2;
@@ -218,10 +250,10 @@ function resolveAttack() {
   if(blocking){
     const result=blockHit(stamina,kind);stamina=result.stamina;regenAt=time+800;
     if(result.broken){playerStunned=time+1400;releaseGuard();say('GUARD BREAK · สตั้น!');}
-    else{damage=0;say(`BLOCK · −${ATTACKS[kind].cost} STAMINA`);effects.push({x:88,y:295,text:'✦',color:'#94e5ff',until:time+400});}
-  }else if(shield){shield--;damage=0;say('WARD BLOCK');}
+    else{damage=0;enemy.openUntil=time+550;say(`BLOCK · COUNTER! −${ATTACKS[kind].cost} STAMINA`);effects.push({x:88,y:295,text:'✦',color:'#94e5ff',until:time+400});}
+  }else if(shield){shield--;damage=0;enemy.openUntil=time+900;say('WARD BLOCK · COUNTER!');}
   else say(kind==='sweep'?'ท่ากวาดต้อง BLOCK!':'HIT! ปัดสวน หรือหลบตามลูกศร');
-  if(damage){hp=Math.max(0,hp-damage);flash=time+170;}
+  if(damage){run.damage+=Math.min(hp,damage);hp=Math.max(0,hp-damage);flash=time+170;}
   attack=null;nextAttack=time+1100;
   if(!hp){phase='dead';openPanel();}
 }
@@ -239,8 +271,8 @@ function draw(){
   for(let i=0;i<14;i++){const x=(i*43+time/90)%240,y=90+(i*59+time/150)%230;rect(x,y,1,2,'#bc86645c');}
   drawEnemy();
   let dx=0,dy=0;if(dodge&&dodge.until>time){const v=Math.sin((dodge.until-time)/260*Math.PI)*19;dx=dodge.dir==='left'?-v:dodge.dir==='right'?v:0;dy=dodge.dir==='up'?-v:dodge.dir==='down'?v:0;}
-  character(55+dx,316+dy,1.9,true);
-  if(blocking){poly([[76,302],[94,296],[113,303],[110,329],[94,342],[79,330]],'#394960');poly([[81,305],[94,301],[108,306],[106,326],[94,336],[83,326]],'#87bac7');rect(92,308,4,20,'#f1e0a9');rect(85,316,18,4,'#f1e0a9');}
+  const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
+  ctx.save();ctx.translate(60+dx,308+dy);ctx.scale(1,aspect);drawHero(ctx,0,0,112,true);ctx.restore();
   if(playerStunned>time){ctx.fillStyle='#ffd293';ctx.font='bold 10px monospace';ctx.fillText('GUARD BROKEN',12,252);}
   if(swing>time){ctx.strokeStyle='#fff4b1';ctx.lineWidth=4;ctx.beginPath();ctx.arc(140,224,52,-2,.7);ctx.stroke();ctx.strokeStyle='#e7a165';ctx.lineWidth=2;ctx.beginPath();ctx.arc(140,224,58,-2,.4);ctx.stroke();}
   if(shield){ctx.strokeStyle='#ad97ff';ctx.lineWidth=2;ctx.strokeRect(21+dx,257+dy,79,126);}

@@ -3,6 +3,28 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 const core = await import('./core.mjs').catch(() => ({}));
+
+test('equipment enforces two hands, shields, unique rings and migrates old saves',()=>{
+  const s=core.newSave();s.owned=Object.keys(core.ITEMS);
+  assert.equal(core.stats(s).canBlock,true);
+  assert.equal(core.equip(s,'weapon','greatsword'),true);
+  assert.equal(s.equipment.offhand,null);assert.equal(core.stats(s).canBlock,false);
+  assert.equal(core.equip(s,'offhand','wood-shield'),false);
+  core.equip(s,'weapon','rust-sword');core.equip(s,'offhand','parry-dagger');
+  assert.equal(core.stats(s).canBlock,false);
+  core.equip(s,'offhand','wood-shield');assert.equal(core.stats(s).canBlock,true);
+  core.equip(s,'offhand',null);assert.equal(core.loadSave(JSON.stringify(s)).equipment.offhand,null);
+  core.equip(s,'ring1','moon-ring');assert.equal(core.equip(s,'ring2','moon-ring'),false);
+  const old=core.loadSave(JSON.stringify({owned:['moon-ring'],equipment:{ring:'moon-ring'}}));
+  assert.equal(old.equipment.ring1,'moon-ring');
+  assert.equal(Object.keys(old.equipment).length,10);
+});
+test('enemy defense strengthens with level and opens after counters; rating counts damage and potions',()=>{
+  assert.ok(core.guardReduction(8)>core.guardReduction(1));
+  assert.equal(core.stars({damage:0,potions:0,maxHp:100}),3);
+  assert.equal(core.stars({damage:30,potions:0,maxHp:100}),2);
+  assert.equal(core.stars({damage:0,potions:2,maxHp:100}),1);
+});
 test('opposite slashes parry; matching dodges evade, only inside the timing window', () => {
   assert.equal(typeof core.defend, 'function');
   for (const [incoming, opposite] of [['up','down'],['down','up'],['left','right'],['right','left']]) {
@@ -93,13 +115,23 @@ test('real game loop: three floors, parry stun, dodge, spells, rewards, death, a
   run('shield=0;attack={dir:"up",at:time};openPanel();loop(32)');assert.equal(run('hp'),100);
   run('paused=false;loop(48)');assert.ok(run('hp')<100);
   run('save.equipment.weapon="rust-sword";enter(1)');
+  run('enter(3)');const guardedHp=run('enemy.hp');
+  run('for(let i=0;i<30;i++){time+=230;slash("left")}');assert.equal(run('enemy.hp'),guardedHp,'late enemies must stop blind swipe spam');
+  run('attack={dir:"up",kind:"normal",at:time+300};time+=1;defensive("down","slash");time+=230;slash("left")');assert.ok(run('enemy.hp')<guardedHp);
+  run('enter(1);hp=40;drinkPotion()');assert.equal(run('hp'),90);assert.equal(run('run.potions'),1);assert.equal(run('save.potions'),2);
+  run('enter(1);drinkPotion()');assert.equal(run('save.potions'),2,'full health must not consume potion');
   for(let floor=1;floor<=3;floor++){
+    const startingGold=run('save.gold');
     run(`enter(${floor})`);
     for(let room=0;room<3;room++){
-      for(let strikes=0;strikes<40&&run('phase')==='combat';strikes++)run('time+=230;slash("left")');
-      assert.equal(run('phase'),'walking');run('time=transition;loop(last+16)');
+      for(let strikes=0;strikes<50&&run('phase')==='combat';strikes++)run('attack={dir:"right",kind:"normal",at:time+100};defensive("left","slash");time+=230;slash("left")');
+      assert.equal(run('phase'),'walking');assert.match(nodes.get('rewardToast').innerHTML,/EXP/);assert.equal(nodes.get('rewardToast').hidden,false);
+      const earned=run('save.gold');run('hit(999)');assert.equal(run('save.gold'),earned,'defeated enemy pays once');
+      run('time=rewardUntil+1;hud()');assert.equal(nodes.get('rewardToast').hidden,true);
+      run('loop(last+16)');
     }
-    assert.equal(run('phase'),'won');assert.equal(run('save.gold'),[300,590,950][floor-1]);
+    assert.equal(run('phase'),'won');assert.equal(run('save.gold')-startingGold,run('run.gold'));assert.ok(run('run.xp')>0);assert.equal(run('run.items.length'),3);assert.equal(run('stars(run)'),3);
+    assert.match(nodes.get('panelBody').innerHTML,/3 of 3 stars/);
     const balance=run('save.gold');run('loop(last+16)');assert.equal(run('save.gold'),balance);
   }
   assert.equal(run('save.unlocked'),3);assert.ok(storage.has('emberblade-v1'));
@@ -119,11 +151,16 @@ test('real game loop: three floors, parry stun, dodge, spells, rewards, death, a
   events.get('blockBtn:pointerdown')({pointerId:1,preventDefault(){}});assert.equal(run('blocking'),true);
   events.get('blockBtn:pointerup')({pointerId:2});assert.equal(run('blocking'),true);
   events.get('blockBtn:pointercancel')({pointerId:1});assert.equal(run('blocking'),false);
+  run('equip(save,"weapon","ember-staff");enter(1);setBlocking(true)');assert.equal(run('blocking'),false);
+  run('equip(save,"weapon","rust-sword");equip(save,"offhand","wood-shield");enter(1);draw()');
+  assert.ok(imageCalls.some(frame=>frame[0]===run('sprites.guards')),'guard stance must render');
+  imageCalls.length=0;run('hit(10);draw()');
+  assert.ok(imageCalls.some(frame=>frame[0]===run('sprites.guards')&&frame[2]>0),'guard impact must render');
   for(const type of ['brute','lizard','wraith','knight'])for(const [dir,expectedRow] of [['up',1],['down',2],['left',type==='wraith'?4:3],['right',type==='wraith'?3:4]]){
     run(`enter(1);enemy.type='${type}';attack={dir:'${dir}',kind:'normal',at:time+900};draw()`);
-    const prep=imageCalls.at(-1);
+    const prep=imageCalls.findLast(frame=>frame[0]===run(`sprites['${type}']`));
     assert.equal(Math.floor((prep[2]+prep[4]/2)/280.4),expectedRow);
-    run('resolveAttack();draw()');const strike=imageCalls.at(-1);
+    run('resolveAttack();draw()');const strike=imageCalls.findLast(frame=>frame[0]===run(`sprites['${type}']`));
     assert.equal(Math.floor((strike[2]+strike[4]/2)/280.4),expectedRow);
     assert.notEqual(prep[1],strike[1],'windup and strike must be different frames');
     for(const frame of [prep,strike]){assert.ok(frame.slice(1).every(Number.isFinite));assert.ok(frame[1]>=0&&frame[2]>=0&&frame[1]+frame[3]<=1122&&frame[2]+frame[4]<=1402);}
