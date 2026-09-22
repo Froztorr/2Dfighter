@@ -1,4 +1,4 @@
-import { ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
+import { ENEMY_VARIANTS, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('scene'), ctx = canvas.getContext('2d');
 canvas.width = 480; canvas.height = 800;
@@ -22,6 +22,7 @@ const cueIcons={normal:'<path d="M23 3l-3 13-9 9-4-4 9-9Z M5 19l8 8 M8 24l-5 5"/
 const arrows = { up: '↑', down: '↓', left: '←', right: '→' };
 const floors = FLOORS.map(f=>f.name);
 const enemyTypes = { brute:'Grotto Brute', lizard:'Scale Reaver', wraith:'Cinder Wraith', knight:'Crimson Warden', frost:'Rime Revenant',spider:'Widow Matriarch',demon:'Obsidian Behemoth' };
+Object.assign(enemyTypes,Object.fromEntries(Object.entries(ENEMY_VARIANTS).map(([id,v])=>[id,v.name])));
 const encounters = FLOORS.map(f=>f.enemies);
 // Measured transparent gutters: generated sheets are not perfectly uniform grids.
 const atlasCuts = {
@@ -39,7 +40,7 @@ function spawn() {
   const max = 65 + floor * 15 + room * 12 + (room === 2 ? 65 : 0);
   const type=encounters[floor-1][room];
   enemy = { hp: max, max, type, level:(floor-1)*3+room+1, openUntil:0, guardHit:0, name: enemyTypes[type]+(room===2?' • BOSS':''), hit: 0, strikeUntil:0, recoverUntil:0, dir:'down' };
-  attack = null; stunned = 0; nextAttack = time + 1700; phase = 'combat';
+  attack = null; attackCount = 0; stunned = 0; nextAttack = time + 1700; phase = 'combat';
   say(room === 0 ? 'ลากนิ้วฟัน • ปัดสวนลูกศรเพื่อ parry' : 'Room cleared. Moving deeper…'); hud();
 }
 function hud() {
@@ -138,7 +139,7 @@ function setBlocking(value) {
 }
 function releaseGuard() { guardPointer=null;guardKey=false;setBlocking(false); }
 function openPanel() { paused = true; releaseGuard(); pointer=null; trail=[]; $('panel').hidden=false; renderPanel(); }
-function itemIcon(id){const i=ITEMS[id],cols=i?.atlas?4:6,rows=i?.atlas?3:6;return i?`<span class="gearIcon ${i.atlas?'relicIcon':''}" style="background-position:${i.icon%cols*100/(cols-1)}% ${Math.floor(i.icon/cols)*100/(rows-1)}%"></span>`:'<span class="emptySlot">＋</span>';}
+function itemIcon(id){const i=ITEMS[id],cols=i?.atlas?4:6,rows=i?.atlas?3:6;return i?`<span class="gearIcon ${i.atlas?'relicIcon':''}" style="filter:hue-rotate(${i.hue||0}deg);background-position:${i.icon%cols*100/(cols-1)}% ${Math.floor(i.icon/cols)*100/(rows-1)}%"></span>`:'<span class="emptySlot">＋</span>';}
 function itemStats(i){return [i.attack?`ATK +${i.attack}`:'',i.armor?`DEF +${i.armor}`:'',i.health?`HP +${i.health}`:'',i.hands===2?'2 HANDS':i.shield?'BLOCK':''].filter(Boolean).join(' · ');}
 function rewardText(r){return `+${r.gold} GOLD · +${r.xp||0} EXP${r.potions?' · +'+r.potions+' POTION':''}`;}
 function questPanel(){
@@ -238,7 +239,7 @@ function poly(points,c){ctx.fillStyle=c;ctx.beginPath();points.forEach(([x,y],i)
 function gearSprite(context,id,x,y,w,h=w,angle=0){
   const item=ITEMS[id],sheet=sprites[item?.atlas||'gear'];if(!item||!sheet.complete||!sheet.naturalWidth)return;
   const cols=item.atlas?4:6,rows=item.atlas?3:6,cell=sheet.naturalWidth/cols;
-  context.save();context.translate(x,y);context.rotate(angle);context.drawImage(sheet,item.icon%cols*cell,Math.floor(item.icon/cols)*sheet.naturalHeight/rows,cell,sheet.naturalHeight/rows,-w/2,-h/2,w,h);context.restore();
+  context.save();context.filter=`hue-rotate(${item.hue||0}deg)`;context.translate(x,y);context.rotate(angle);context.drawImage(sheet,item.icon%cols*cell,Math.floor(item.icon/cols)*sheet.naturalHeight/rows,cell,sheet.naturalHeight/rows,-w/2,-h/2,w,h);context.restore();
 }
 function drawHero(context,x,y,size,back){
   const sheet=sprites.hero;if(!sheet.complete||!sheet.naturalWidth)return;
@@ -268,9 +269,10 @@ function enemyPosition() {
   return {x:144,y:212+impact};
 }
 function drawEnemy() {
-  const sheet=sprites[enemy?.type || 'brute'];
+  const variant=ENEMY_VARIANTS[enemy?.type], spriteType=variant?.sprite||enemy?.type||'brute';
+  const sheet=sprites[spriteType];
   if(!sheet.complete || !sheet.naturalWidth)return;
-  const expanded=['frost','spider','demon'].includes(enemy?.type);
+  const expanded=['frost','spider','demon'].includes(spriteType);
   const guarding=phase==='combat'&&stunned<=time&&enemy.openUntil<=time&&((!attack&&enemy.recoverUntil<=time)||enemy.guardHit>time);
   if(guarding&&!expanded){
     const guard=sprites.guards,{x,y}=enemyPosition(),column=Object.keys(enemyTypes).indexOf(enemy.type),row=enemy.guardHit>time?1:0;
@@ -290,12 +292,13 @@ function drawEnemy() {
   const cellW=sheet.naturalWidth/4,cellH=sheet.naturalHeight/(expanded?6:5);
   const {x,y}=enemyPosition(), size=room===2?174:156;
   const bounds=canvas.getBoundingClientRect(), aspect=(bounds.width/240)/(bounds.height/400);
-  const cuts=atlasCuts[enemy?.type || 'brute']||{x:[0,cellW,cellW*2,cellW*3,cellW*4],y:Array(4).fill(Array.from({length:7},(_,i)=>cellH*i))};
+  const cuts=atlasCuts[spriteType]||{x:[0,cellW,cellW*2,cellW*3,cellW*4],y:Array(4).fill(Array.from({length:7},(_,i)=>cellH*i))};
   const sx=cuts.x[column],sy=cuts.y[column][row],sw=cuts.x[column+1]-sx,sh=cuts.y[column][row+1]-sy;
   const scale=size/cellW;
   ctx.save();
+  if(variant)ctx.filter=`hue-rotate(${variant.hue}deg)`;
   // Both generated demon horizontal strikes face right; mirror the left attack only.
-  if(enemy?.type==='demon'&&row===3){ctx.translate(x*2,0);ctx.scale(-1,1);}
+  if(spriteType==='demon'&&row===3){ctx.translate(x*2,0);ctx.scale(-1,1);}
   if(phase==='walking')ctx.globalAlpha=Math.min(1,(transition-time)/500);
   else if(enemy?.hit>time)ctx.globalAlpha=.78;
   ctx.drawImage(sheet,sx,sy,sw,sh,Math.round(x-size/2+(sx-column*cellW)*scale),Math.round(y-size*aspect/2+(sy-row*cellH)*scale*aspect),sw*scale,sh*scale*aspect);
@@ -330,6 +333,19 @@ function draw(){
   if(floor===4){for(let i=0;i<23;i++)rect((i*37+Math.sin(time/900+i)*8)%240,60+(i*19+time/65)%320,2,2,'#c9e9f7');for(const x of [0,25,196,222])poly([[x,48],[x+8,95],[x+16,48]],'#98ced0');}
   if(floor===5){ctx.strokeStyle='#adacbf55';ctx.lineWidth=1;for(const anchor of [0,240]){for(let i=0;i<6;i++){ctx.beginPath();ctx.moveTo(anchor,50);ctx.lineTo(anchor+(anchor?-1:1)*90,60+i*24);ctx.stroke();}for(let i=1;i<4;i++){ctx.beginPath();ctx.arc(anchor,50,i*28,0,Math.PI);ctx.stroke();}}}
   if(floor===6){for(let i=0;i<10;i++){const y=215+i*19;rect((i*67)%210,y,25,2,'#ff7138');rect((i*67)%210+12,y+2,2,10,'#d84127');}}
+  if(FLOORS[floor-1].theme==='storm'){
+    for(let i=0;i<24;i++){const x=(i*31+time/24)%240,y=55+(i*47+time/9)%330;rect(x,y,1,9,'#9fcbe777');}
+    if(Math.floor(time/180)%23===0)poly([[182,52],[170,86],[181,84],[159,127],[166,94],[155,96]],'#d9f5ff');
+  }
+  if(FLOORS[floor-1].theme==='tide'){
+    rect(0,218,240,182,'#258a8e28');
+    for(let i=0;i<13;i++)rect((i*41+Math.sin(time/650+i)*12)%240,225+i*13,22,1,'#75dbca66');
+    for(const x of [8,220])for(let i=0;i<7;i++)rect(x+Math.sin(time/900+i)*3,187+i*5,3,6,'#497c70');
+  }
+  if(FLOORS[floor-1].theme==='eclipse'){
+    ctx.strokeStyle='#d6a5ec';ctx.lineWidth=2;ctx.beginPath();ctx.arc(124,113,20,0,Math.PI*2);ctx.stroke();
+    for(let i=0;i<18;i++)rect((i*43)%240,65+(i*29+time/100)%130,1,2,'#c3a0e1');
+  }
   drawEnemy();
   let dx=0,dy=0;if(dodge&&dodge.until>time){const v=Math.sin((dodge.until-time)/260*Math.PI)*19;dx=dodge.dir==='left'?-v:dodge.dir==='right'?v:0;dy=dodge.dir==='up'?-v:dodge.dir==='down'?v:0;}
   const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
@@ -348,7 +364,8 @@ function loop(now){const dt=Math.min(50,now-last);last=now;updateMini(now);if(no
   if(phase==='combat'){
     if(time>=regenAt)stamina=regenStamina(stamina,dt/1000,blocking);
     if(attack&&time>=attack.at)resolveAttack();
-    if(phase==='combat'&&!attack&&time>=nextAttack&&time>=stunned){const pattern=enemy.type==='frost'?['normal','heavy','normal','sweep']:enemy.type==='spider'?['normal','normal','heavy','normal']:enemy.type==='demon'?['heavy','normal','sweep','normal']:['normal','normal','heavy','normal','sweep'];const kind=pattern[attackCount++%pattern.length],duration=kind==='normal'?Math.max(650,1050-floor*70):1300;attack={dir:Object.keys(DIR)[Math.floor(Math.random()*4)],kind,started:time,at:time+duration};enemy.dir=attack.dir;}
+    if(phase==='combat'&&!attack&&time>=nextAttack&&time>=stunned){const variant=ENEMY_VARIANTS[enemy.type];const pattern=variant?.pattern||(enemy.type==='frost'?['normal','heavy','normal','sweep']:enemy.type==='spider'?['normal','normal','heavy','normal']:enemy.type==='demon'?['heavy','normal','sweep','normal']:['normal','normal','heavy','normal','sweep']);const kind=pattern[attackCount++%pattern.length],duration=kind==='normal'?Math.max(650,1050-floor*70):1300;attack={dir:variant?variant.directions[(attackCount-1)%variant.directions.length]:Object.keys(DIR)[Math.floor(Math.random()*4)],kind,started:time,at:time+duration};enemy.dir=attack.dir;}
   }
 }hud();draw();requestAnimationFrame(loop);}
 hud();requestAnimationFrame(loop);
+

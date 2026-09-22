@@ -45,7 +45,19 @@ export const ITEMS = {
   'inferno-axe': {name:'Inferno Cleaver',slot:'weapon',cost:850,attack:34,hands:2,icon:8,atlas:'relics'},
   'demon-staff': {name:'Hellfire Scepter',slot:'weapon',cost:800,attack:22,magic:true,hands:2,icon:9,atlas:'relics'},
   'demon-ring': {name:'Emberlord Seal',slot:'ring',cost:500,attack:6,health:20,icon:10,atlas:'relics'},
-  'inferno-robe': {name:'Hellfire Vestments',slot:'armor',cost:650,armor:6,health:45,look:3,hue:105,icon:11,atlas:'relics'}
+  'inferno-robe': {name:'Hellfire Vestments',slot:'armor',cost:650,armor:6,health:45,look:3,hue:105,icon:11,atlas:'relics'},
+  'storm-spear': {name:'Stormpiercer',slot:'weapon',cost:920,attack:37,hands:2,icon:4,hue:190},
+  'storm-helm': {name:'Tempest Crown',slot:'helm',cost:600,armor:7,attack:3,look:1,hue:210,icon:2,atlas:'relics'},
+  'storm-boots': {name:'Thunderstep',slot:'boots',cost:560,armor:4,attack:4,look:1,hue:210,icon:21},
+  'storm-ring': {name:'Eye of the Storm',slot:'ring',cost:620,attack:8,icon:24,hue:190},
+  'tidal-blade': {name:'Undertow',slot:'weapon',cost:850,attack:24,health:20,icon:0,atlas:'relics',hue:45},
+  'tidal-shield': {name:'Pearl Bastion',slot:'offhand',cost:740,armor:11,health:15,shield:true,icon:1,atlas:'relics',hue:45},
+  'tidal-mail': {name:'Abyssal Mail',slot:'armor',cost:820,armor:12,health:35,look:1,hue:120,icon:3,atlas:'relics'},
+  'tidal-pendant': {name:'Heart of the Deep',slot:'neck',cost:660,health:65,icon:7,atlas:'relics',hue:70},
+  'eclipse-staff': {name:'Eventide Scepter',slot:'weapon',cost:1050,attack:29,magic:true,hands:2,icon:9,atlas:'relics',hue:240},
+  'eclipse-dagger': {name:'Moonless Talon',slot:'offhand',cost:760,attack:17,icon:5,atlas:'relics',hue:100},
+  'eclipse-cloak': {name:'Veil of Midnight',slot:'cloak',cost:700,attack:6,health:30,look:3,hue:55,icon:32},
+  'eclipse-greaves': {name:'Duskweave Leggings',slot:'pants',cost:640,armor:5,health:30,look:3,hue:55,icon:20}
 };
 export const FLOORS=[
   {name:'THE ASHEN HALLS',theme:'ash',enemies:['brute','lizard','knight'],drops:['rogue-hood','trail-boots','wolf-helm'],colors:['#272537','#3c3544','#544453']},
@@ -53,7 +65,10 @@ export const FLOORS=[
   {name:'THE EMBER THRONE',theme:'ember',enemies:['wraith','knight','knight'],drops:['astral-cloak','arcane-pendant','moon-ring'],colors:['#37252e','#503038','#70433e']},
   {name:'FROSTBOUND KEEP',theme:'frost',enemies:['frost','knight','frost'],drops:['frost-helm','frost-shield','frost-sword'],colors:['#182e45','#29435d','#729da8']},
   {name:'THE SILKEN ABYSS',theme:'silk',enemies:['spider','wraith','spider'],drops:['silk-cloak','spider-claw','spider-fang'],colors:['#231e36','#3b2c48','#6e527b']},
-  {name:'OBSIDIAN INFERNO',theme:'inferno',enemies:['demon','frost','demon'],drops:['demon-ring','inferno-robe','inferno-axe'],colors:['#281824','#432532','#a94e3d']}
+  {name:'OBSIDIAN INFERNO',theme:'inferno',enemies:['demon','frost','demon'],drops:['demon-ring','inferno-robe','inferno-axe'],colors:['#281824','#432532','#a94e3d']},
+  {name:'TEMPEST SPIRE',theme:'storm',enemies:['storm','frost','storm'],drops:['storm-boots','storm-helm','storm-spear'],colors:['#19253d','#303b5d','#718cab']},
+  {name:'THE DROWNED SANCTUM',theme:'tide',enemies:['tide','spider','tide'],drops:['tidal-blade','tidal-mail','tidal-shield'],colors:['#102e35','#23484d','#53968e']},
+  {name:'ECLIPSE CITADEL',theme:'eclipse',enemies:['eclipse','demon','eclipse'],drops:['eclipse-greaves','eclipse-cloak','eclipse-staff'],colors:['#23182f','#443153','#947292']}
 ];
 export const QUESTS=[
   {id:'hunt',event:'kills',goal:6,name:'Monster Hunter',description:'กำจัดศัตรู 6 ตัว',reward:{gold:150,xp:80}},
@@ -167,3 +182,11 @@ export function loadSave(text) {
   if (raw.upgrades && typeof raw.upgrades === 'object') for (const k of Object.keys(base.upgrades)) base.upgrades[k] = Math.max(0, Math.min(10, Number(raw.upgrades[k]) || 0));
   return base;
 }
+
+
+// Variants share existing animation atlases while retaining their own combat identity.
+export const ENEMY_VARIANTS = {
+  storm:{name:'Tempest Lancer',sprite:'frost',hue:65,pattern:['normal','heavy','normal','heavy'],directions:['up','down','left','right']},
+  tide:{name:'Drowned Castellan',sprite:'demon',hue:160,pattern:['heavy','normal','sweep','normal'],directions:['down','left','right','up']},
+  eclipse:{name:'Eclipse Oracle',sprite:'spider',hue:285,pattern:['normal','sweep','normal','heavy','normal'],directions:['left','right','up','down']}
+};
