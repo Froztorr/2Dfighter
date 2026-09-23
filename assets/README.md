@@ -37,3 +37,9 @@ Built-in ImageGen originals, no external stock assets. The supplied equipment sc
 - `guards.png`: 4 × 2 equal cells, 1774 × 887 RGBA. Columns brute, lizard, wraith, knight; ready guard and impact guard rows.
 
 Generation brief: richly shaded dark fantasy 16-bit pixel sprites, organic silhouettes, true transparent backgrounds, no text/borders. Gear: 36 individually specified centered icons. Hero: eight aligned neutral front/back characters, no weapons/capes; transparency refinement preserved layout. Guards: each monster braces its own club/shield/magic ward, then recoils with impact sparks. Assets are sliced only at rendering time; the validation script is read-only.
+
+## Hall and articulated combat (2026-09-23)
+
+`hall.png`: original built-in ImageGen portrait painting, used as the main-menu background and dimmed character-folio backdrop. Prompt: detailed 16-bit dark-fantasy ruined fortress under a pale moon, stone arch, bronze ornament, midnight teal/charcoal/antique gold, empty foreground terrace, no text or UI. Opaque scenery, not a sprite atlas.
+
+Combat uses the rear hero atlas as jointed head/torso/upper-arm/forearm/leg layers. Each layer selects the equipped clothing column and tint; held gear follows the forearm. Windup/contact/recovery lasts 280 ms with damage at 110 ms and a 300 ms input cadence. Parry remains immediate. Impact particles follow the strike direction; player damage triggers recoil, hitstop and an edge vignette. Reduced-motion preference disables camera shake.

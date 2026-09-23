@@ -4,6 +4,14 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 const core = await import('./core.mjs').catch(() => ({}));
 
+test('combat poses articulate the body, recover to rest and send impact particles along the hit',()=>{
+  const right=core.heroPose('slash','right',110),left=core.heroPose('slash','left',110);
+  assert.notEqual(right.arm,left.arm);assert.notEqual(right.torso,0);assert.notEqual(right.leg,0);
+  assert.equal(core.heroPose('slash','right',500).torso,0);
+  assert.ok(core.impactParticles('up',10).every(p=>p.vy<0));
+  assert.ok(core.impactParticles('right',10).every(p=>p.vx>0));
+});
+
 test('daily quests reset at Bangkok midnight and pay once, minigame prizes are capped and survive reload',()=>{
   const s=core.newSave(),before=Date.parse('2026-09-22T16:59:59Z'),after=before+1000;
   assert.equal(core.dayKey(before),'2026-09-22');assert.equal(core.dayKey(after),'2026-09-23');
@@ -117,34 +125,45 @@ test('guard breaks on insufficient or exactly depleted stamina and recovers grad
 test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and pause', async()=>{
   const nodes=new Map(), events=new Map(), storage=new Map();
   const imageCalls=[];
-  const drawing=new Proxy({}, {get:(_,key)=>key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
+  const drawing=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
   const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{setProperty(){}},dataset:{},hidden:true,setAttribute(){},classList:{toggle(){}},addEventListener(type,fn){events.set(id+':'+type,fn);},getContext:()=>drawing,querySelector:()=>node('heading'),getBoundingClientRect:()=>({left:0,top:0,width:240,height:400}),setPointerCapture(){}});return nodes.get(id);};
-  const context=vm.createContext({...core,Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){if(/\/(frost|spider|demon)\.png$/.test(path)){this.naturalWidth=1024;this.naturalHeight=1536;}}},document:{getElementById:node,querySelectorAll:()=>[],addEventListener(){},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
+  const context=vm.createContext({...core,Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){if(/\/(frost|spider|demon)\.png$/.test(path)){this.naturalWidth=1024;this.naturalHeight=1536;}}},document:{getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
   const source=(await readFile(new URL('./app.js',import.meta.url),'utf8')).replace(/^import[^\n]+\n/,'');
   vm.runInContext(source,context);
   const run=s=>vm.runInContext(s,context);
+  assert.equal(run('phase'),'home');run('loop(500)');assert.equal(run('enemy'),undefined);
+  const clickButton=button=>events.get('document:click')({target:{closest:()=>({id:'',dataset:{},hasAttribute:()=>false,...button})}});
+  clickButton({id:'start'});assert.equal(run('phase'),'home');assert.match(nodes.get('homeBody').innerHTML,/THE EXPEDITION/);
+  clickButton({dataset:{embark:'6'}});assert.equal(run('phase'),'home','locked floor is not entered');
+  run('spritesLoaded=Object.keys(sprites).length');clickButton({dataset:{embark:'1'}});assert.equal(run('phase'),'combat');
+  run('enemy.openUntil=time+1000');const beforeContact=run('enemy.hp');
+  events.get('scene:pointerdown')({pointerId:9,clientX:100,clientY:200});events.get('scene:pointermove')({pointerId:9,clientX:140,clientY:200});
+  assert.equal(run('heroAction.type'),'slash');assert.equal(run('enemy.hp'),beforeContact,'damage waits for contact');
+  run('time+=110;resolvePlayerStrike()');assert.ok(run('enemy.hp')<beforeContact);assert.ok(run('particles.length')>0);
+  events.get('scene:pointerup')({pointerId:9,clientX:160,clientY:200});assert.equal(run('pendingSlash'),null,'release does not double strike');
+  clickButton({dataset:{home:'hall'}});assert.equal(run('phase'),'home');assert.equal(run('attack'),null);
   run('enter(1);attack={dir:"up",at:time+100};slash("down")');
   assert.equal(run('attack'),null);assert.ok(run('stunned>time'));assert.equal(run('hp'),100);
-  const enemyBefore=run('enemy.hp');run('time+=250;slash("left")');assert.ok(run('enemy.hp')<enemyBefore);
+  const enemyBefore=run('enemy.hp');run('time+=310;slash("left");time+=120;resolvePlayerStrike()');assert.ok(run('enemy.hp')<enemyBefore);
   run('attack={dir:"right",at:time+100};evade("right")');assert.equal(run('attack'),null);
   run('save.equipment.weapon="ember-staff"');
   const circle=Array.from({length:65},(_,i)=>[100+60*Math.cos(i*Math.PI/32),100+60*Math.sin(i*Math.PI/32)]);
   context.rune=circle;run('cast(rune)');const after=run('enemy.hp');run('cast(rune)');assert.equal(run('enemy.hp'),after);
   context.rune=[[20,20],[100,20],[100,100],[20,100],[20,20]];run('cast(rune)');assert.equal(run('shield'),2);
-  run('attack={dir:"up",at:time};loop(16)');assert.equal(run('hp'),100);assert.equal(run('shield'),1);
-  run('shield=0;attack={dir:"up",at:time};openPanel();loop(32)');assert.equal(run('hp'),100);
-  run('paused=false;loop(48)');assert.ok(run('hp')<100);
+  run('attack={dir:"up",at:time};loop(last+16)');assert.equal(run('hp'),100);assert.equal(run('shield'),1);
+  run('shield=0;attack={dir:"up",at:time};openPanel();loop(last+16)');assert.equal(run('hp'),100);
+  run('paused=false;hitStop=0;loop(last+16)');assert.ok(run('hp')<100);
   run('save.equipment.weapon="rust-sword";enter(1)');
   run('enter(3)');const guardedHp=run('enemy.hp');
-  run('for(let i=0;i<30;i++){time+=230;slash("left")}');assert.equal(run('enemy.hp'),guardedHp,'late enemies must stop blind swipe spam');
-  run('attack={dir:"up",kind:"normal",at:time+300};time+=1;defensive("down","slash");time+=230;slash("left")');assert.ok(run('enemy.hp')<guardedHp);
+  run('for(let i=0;i<30;i++){time+=310;slash("left");time+=120;resolvePlayerStrike()}');assert.equal(run('enemy.hp'),guardedHp,'late enemies must stop blind swipe spam');
+  run('attack={dir:"up",kind:"normal",at:time+300};time+=1;defensive("down","slash");time+=310;slash("left");time+=120;resolvePlayerStrike()');assert.ok(run('enemy.hp')<guardedHp);
   run('enter(1);hp=40;drinkPotion()');assert.equal(run('hp'),90);assert.equal(run('run.potions'),1);assert.equal(run('save.potions'),2);
   run('enter(1);drinkPotion()');assert.equal(run('save.potions'),2,'full health must not consume potion');
   for(let floor=1;floor<=6;floor++){
     const startingGold=run('save.gold');
     run(`enter(${floor})`);
     for(let room=0;room<3;room++){
-      for(let strikes=0;strikes<50&&run('phase')==='combat';strikes++)run('attack={dir:"right",kind:"normal",at:time+100};defensive("left","slash");time+=230;slash("left")');
+      for(let strikes=0;strikes<50&&run('phase')==='combat';strikes++)run('attack={dir:"right",kind:"normal",at:time+100};defensive("left","slash");time+=310;slash("left");time+=120;resolvePlayerStrike()');
       assert.equal(run('phase'),'walking');assert.match(nodes.get('rewardToast').innerHTML,/EXP/);assert.equal(nodes.get('rewardToast').hidden,false);
       const earned=run('save.gold');run('hit(999)');assert.equal(run('save.gold'),earned,'defeated enemy pays once');
       run('time=rewardUntil+1;hud()');assert.equal(nodes.get('rewardToast').hidden,true);

@@ -1,22 +1,24 @@
-import { ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
+import { heroPose, impactParticles, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('scene'), ctx = canvas.getContext('2d');
 canvas.width = 480; canvas.height = 800;
 const sprites = Object.fromEntries(['brute','lizard','wraith','knight','gear','hero','guards','frost','spider','demon','relics'].map(name => [name, new Image()]));
 let spritesLoaded = 0;
 for (const [name, image] of Object.entries(sprites)) {
-  image.onload = () => { spritesLoaded++; if (spritesLoaded===Object.keys(sprites).length) { $('start').disabled=false; $('assetStatus').textContent=''; } };
+  image.onload = () => { spritesLoaded++; if (spritesLoaded===Object.keys(sprites).length) { $('start').disabled=false; $('assetStatus').textContent='';renderHome(); } };
   image.onerror = () => { $('assetStatus').textContent='โหลดภาพไม่สำเร็จ กรุณารีเฟรช'; };
   image.src = `./assets/${name}.png`;
 }
 let save = newSave();
 try { const stored = localStorage.getItem('emberblade-v1'); if (stored) save = loadSave(stored); } catch {}
-let floor = 1, room = 0, hp = stats(save).maxHp, enemy, phase = 'intro', paused = false, tab = 'gear';
+let floor = 1, room = 0, hp = stats(save).maxHp, enemy, phase = 'home', paused = false, tab = 'gear';
 let time = 0, last = performance.now(), attack = null, nextAttack = 1800, stunned = 0, nextSlash = 0, nextDodge = 0;
-let trail = [], pointer = null, effects = [], flash = 0, swing = 0, dodge = null, shield = 0, cooldown = {}, transition = 0;
+let trail = [], pointer = null, pointerSlashed=false, effects = [], flash = 0, dodge = null, shield = 0, cooldown = {}, transition = 0;
 let stamina=100, blocking=false, guardPointer=null, guardKey=false, playerStunned=0, regenAt=0, attackCount=0;
 let selectedSlot='weapon', rewardUntil=0, run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:100};
 let mini=null, campNotice='', dailyCheck=0;
+let heroAction={type:'idle',dir:'right',at:0},pendingSlash=null,particles=[],cuts=[],shakeUntil=0,shakePower=0,hitStop=0,homeView='hall',selectedFloor=1;
+const reducedMotion=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
 const runes=['☀','☾','✦','◇'];
 const cueIcons={normal:'<path d="M23 3l-3 13-9 9-4-4 9-9Z M5 19l8 8 M8 24l-5 5"/>',heavy:'<path d="M4 5L16 2l12 3v12q0 9-12 14Q4 26 4 17Z M16 8v16M10 15h12"/>',sweep:'<path d="M6 23C-3 7 7 2 16 2s19 5 10 21l-5 1v6H11v-6Z"/><path class="skullEyes" d="M8 12l6 3-6 3ZM24 12l-6 3 6 3ZM16 19l-2 4h4Z"/>'};
 const arrows = { up: '↑', down: '↓', left: '←', right: '→' };
@@ -35,14 +37,21 @@ const atlasCuts = {
 };
 function persist() { try { localStorage.setItem('emberblade-v1', JSON.stringify(save)); } catch { say('Storage unavailable — progress lasts this session'); } }
 function say(text) { $('message').textContent = text; }
+function animateHero(type,dir='right'){heroAction={type,dir,at:time};}
+function impact(x,y,dir,kind='blood',power=1){
+  const colors=kind==='blood'?['#8c1232','#cd2940','#f26760']:kind==='magic'?['#eee5ff','#b89afa','#785dca']:['#fff7c0','#e6b36c','#9ae5ec'];
+  for(const p of impactParticles(dir,Math.round(15*power)))particles.push({...p,x,y,at:time,color:colors[Math.floor(Math.random()*colors.length)]});
+  shakeUntil=time+180;shakePower=power*(kind==='blood'?2.6:1.5);hitStop=kind==='blood'?45:25;
+}
 function spawn() {
   const max = 65 + floor * 15 + room * 12 + (room === 2 ? 65 : 0);
   const type=encounters[floor-1][room];
   enemy = { hp: max, max, type, level:(floor-1)*3+room+1, openUntil:0, guardHit:0, name: enemyTypes[type]+(room===2?' • BOSS':''), hit: 0, strikeUntil:0, recoverUntil:0, dir:'down' };
-  attack = null; stunned = 0; nextAttack = time + 1700; phase = 'combat';
+  attack = null; pendingSlash=null; stunned = 0; nextAttack = time + 1700; phase = 'combat';
   say(room === 0 ? 'ลากนิ้วฟัน • ปัดสวนลูกศรเพื่อ parry' : 'Room cleared. Moving deeper…'); hud();
 }
 function hud() {
+  $('game').dataset.mode=phase==='home'?'home':'combat';
   const s = stats(save);
   $('playerHp').style.width = `${Math.max(0,hp/s.maxHp*100)}%`;
   $('staminaFill').style.width = `${stamina}%`;
@@ -71,14 +80,17 @@ function hud() {
   cue.classList.toggle('show', !!attack); cue.classList.toggle('danger', !!attack && attack.at-time <= 450);
   if (s.magic) $('spellHint').textContent = ['circle','square','spiral'].map((k,i) => `${['○ FIRE','□ WARD','◎ NOVA'][i]} ${cooldown[k]>time ? ((cooldown[k]-time)/1000).toFixed(1)+'s' : 'READY'}`).join(' · ');
 }
-function hit(damage, color = '#fff0ae') {
+function hit(damage, color = '#fff0ae',dir=heroAction.dir) {
   if (phase !== 'combat') return;
   if(time>=enemy.openUntil&&time>=stunned){
     damage=Math.floor(damage*(1-guardReduction(enemy.level)));enemy.guardHit=time+280;
     say('GUARDED · parry / หลบ แล้วสวนตอน OPEN');
+    impact(144,207,dir,'spark',.6);
   }
   if(!damage){effects.push({x:118,y:190,text:'BLOCK',color:'#91cce1',until:time+450});return;}
-  enemy.hp = Math.max(0,enemy.hp-damage); enemy.hit = time+130;
+  enemy.hp = Math.max(0,enemy.hp-damage); enemy.hit = time+260;enemy.hitDir=dir;
+  impact(144,212,dir,color==='#bdabff'?'magic':'blood');
+  cuts.push({dir,at:time,x:144,y:212});
   effects.push({ x:145, y:190, text:String(damage), color, until:time+700 });
   if (!enemy.hp) {
     attack = null; phase = 'walking'; transition = time+1500; say('ENEMY DEFEATED');
@@ -107,19 +119,21 @@ function defensive(dir,type) {
   attack = null; stunned = result==='perfect' ? time+2100 : 0; nextAttack = time+(result==='perfect'?2900:1300);
   enemy.openUntil=result==='perfect'?stunned:time+Math.max(600,1150-enemy.level*55);
   progress(save,'defenses');persist();
+  impact(125,232,dir,'spark',result==='perfect'?1.5:.8);
   say(`${result==='perfect'?'PERFECT ':''}${type==='dodge'?'DODGE':'PARRY'}${result==='perfect'?' · STUNNED!':''}`);
   effects.push({x:140,y:175,text:'✦',color:'#c6ffff',until:time+550});
   return true;
 }
 function slash(dir) {
   if (phase!=='combat' || paused || blocking || time<playerStunned || time<nextSlash) return;
-  nextSlash = time+220; swing = time+160;
-  if (!defensive(dir,'slash')) hit(stats(save).attack);
+  nextSlash = time+300;animateHero('slash',dir);
+  if (!defensive(dir,'slash'))pendingSlash={at:time+110,dir,damage:stats(save).attack};
 }
 function evade(dir) {
   if (phase!=='combat' || paused || time<playerStunned || time<nextDodge) return;
   setBlocking(false);
   nextDodge = time+650; dodge = {dir,until:time+260};
+  animateHero('dodge',dir);pendingSlash=null;
   if (!defensive(dir,'dodge')) say(attack?.kind==='sweep'?'ท่ากวาด • กดโล่เพื่อ BLOCK':'Dodge: ตามทิศลูกศร เมื่อใกล้โดน');
 }
 function cast(points) {
@@ -128,13 +142,14 @@ function cast(points) {
   if (!spell) { say('วาด ○ วงกลม · □ สี่เหลี่ยม · ◎ ก้นหอย'); return; }
   if (cooldown[spell]>time) { say('Spell cooling down'); return; }
   cooldown[spell] = time + ({circle:1800,square:6500,spiral:4500}[spell]);
+  animateHero('cast','up');
   if (spell==='square') { shield = 2; say('WARD · blocks the next 2 hits'); }
   else { say(spell==='spiral'?'ARCANE NOVA':'EMBER ORB');hit(Math.round(stats(save).attack*(spell==='spiral'?4:2.5)), '#bdabff'); }
   effects.push({x:140,y:210,text:spell==='square'?'◇':'✺',color:'#bb9aff',until:time+850});
 }
 function setBlocking(value) {
   blocking = !!value && stats(save).canBlock && phase==='combat' && !paused && time>=playerStunned;
-  if (blocking) { pointer=null;trail=[]; }
+  if (blocking) { pointer=null;trail=[];pendingSlash=null; }
 }
 function releaseGuard() { guardPointer=null;guardKey=false;setBlocking(false); }
 function openPanel() { paused = true; releaseGuard(); pointer=null; trail=[]; $('panel').hidden=false; renderPanel(); }
@@ -183,27 +198,40 @@ function updateMini(now){
 function renderPanel() {
   const s=stats(save);
   $('statline').textContent=`LV ${save.level} · ATK ${s.attack} · DEF ${s.armor} · HP ${Math.ceil(hp)}/${s.maxHp} · ◈ ${save.gold}`;
-  $('panel').querySelector('h1').textContent = phase==='won'?'FLOOR CLEARED':phase==='dead'?'YOU FELL':'VANGUARD';
+  $('panel').querySelector('h1').textContent = phase==='won'?'FLOOR CLEARED':phase==='dead'?'YOU FELL':({gear:'CHARACTER',shop:'THE ARMORY',quests:'CONTRACTS',camp:'WAYFARER CAMP'}[tab]);
   $('nextFloor').hidden = !['won','dead'].includes(phase);
-  $('nextFloor').textContent = phase==='dead'?'RETRY FLOOR':floor===floors.length?'RETURN TO FLOOR 1':'ENTER NEXT FLOOR';
+  $('nextFloor').textContent = phase==='dead'?'RETRY FLOOR':floor===floors.length?'กลับแผนที่':'เลือกด่านถัดไป';
   const slotButton=slot=>{const id=save.equipment[slot],locked=slot==='offhand'&&ITEMS[save.equipment.weapon]?.hands===2;return `<button class="gearSlot ${selectedSlot===slot?'selected':''}" data-slot="${slot}" aria-label="${SLOTS[slot]}: ${locked?'Locked':ITEMS[id]?.name||'Empty'}" ${locked?'disabled':''}><small>${SLOTS[slot]}</small>${locked?'<span class="emptySlot">🔒</span>':itemIcon(id)}<span>${locked?'TWO HANDED':ITEMS[id]?.name||'Empty'}</span></button>`;};
   const gear=`<div class="paperDoll"><div>${['helm','armor','pants','boots'].map(slotButton).join('')}</div><div class="heroDisplay"><canvas id="heroPreview" width="240" height="400" aria-label="Equipped character preview"></canvas><b>${s.magic?'ARCANIST':s.canBlock?'VANGUARD':'DUELIST'}</b><small>${s.canBlock?'SHIELD READY':'NO SHIELD · DODGE / WARD'}</small></div><div>${['weapon','offhand','neck','cloak'].map(slotButton).join('')}</div></div><div class="ringSlots">${['ring1','ring2'].map(slotButton).join('')}</div><div class="inventoryTitle">${SLOTS[selectedSlot]} <span>เลือกเพื่อสวมใส่</span></div><div class="inventory">${save.owned.filter(id=>ITEMS[id].slot===(selectedSlot.startsWith('ring')?'ring':selectedSlot)).map(id=>`<button class="inventoryItem ${save.equipment[selectedSlot]===id?'selected':''}" data-item="${id}">${itemIcon(id)}<b>${ITEMS[id].name}</b><small>${itemStats(ITEMS[id])}</small></button>`).join('')}<button class="inventoryItem" data-unequip="${selectedSlot}">ถอดอุปกรณ์</button></div><p class="gearHelp">สองมือจะล็อกช่องรอง • ต้องถือโล่จึงบล็อกได้<br>Staff: วาด □ เพื่อสร้าง WARD รับได้ 2 ครั้ง</p>`;
   const upgrades = ['vigor','edge'].map(k=>`<div class="upgrade">${k.toUpperCase()} ${save.upgrades[k]}/10<button data-upgrade="${k}" ${save.upgrades[k]>=10?'disabled':''}>◈ ${80+save.upgrades[k]*50}</button></div>`).join('');
-  const choices = floors.map((name,i)=>`<button class="floorChoice" data-floor="${i+1}" ${i>=save.unlocked?'disabled':''}>${i>=save.unlocked?'🔒':i+1} · ${name}<span>${'★'.repeat(save.bestStars[i+1]||0)}</span></button>`).join('');
   const summary=phase==='won'?`<section class="clearSummary"><div class="stars" aria-label="${stars(run)} of 3 stars">${'★'.repeat(stars(run))}<span>${'★'.repeat(3-stars(run))}</span></div><h2>${floors[floor-1]}</h2><b>+${run.xp} EXP · +${run.gold} GOLD</b><p>Damage ${run.damage} · Potions ${run.potions}</p><small>★★★ ไม่เสีย HP / ไม่ใช้ยา<br>★★ เสีย HP ≤ ${Math.round(run.maxHp*.5)} / ใช้ยา ≤ 1</small><div class="lootList">${run.items.map(id=>`<div>${itemIcon(id)}${ITEMS[id].name} ×1</div>`).join('')}</div></section>`:'';
-  $('panelBody').innerHTML = summary+(tab==='gear' ? gear + `<p>EXP ${save.xp} / ${save.level*100}</p><div class="upgrade">Vigor +12 HP / Edge +2 ATK</div>` + upgrades + '<p>Unlocked floors</p>' + choices : `<div class="inventory">${Object.entries(ITEMS).map(([id,item])=>`<button class="inventoryItem" data-buy="${id}" ${save.owned.includes(id)||save.gold<item.cost?'disabled':''}>${itemIcon(id)}<b>${item.name}</b><small>${itemStats(item)}</small><span>${save.owned.includes(id)?'OWNED':'◈ '+item.cost}</span></button>`).join('')}</div><button class="primary" data-potion-buy ${save.gold<40||save.potions>=99?'disabled':''}>HEALING POTION · 40 GOLD</button>`);
+  $('panelBody').innerHTML = summary+(tab==='gear' ? gear + `<p>EXP ${save.xp} / ${save.level*100}</p><div class="upgrade">Vigor +12 HP / Edge +2 ATK</div>` + upgrades + '<button class="returnHall" data-home="map">แผนที่การเดินทาง →</button>' : `<div class="inventory">${Object.entries(ITEMS).map(([id,item])=>`<button class="inventoryItem" data-buy="${id}" ${save.owned.includes(id)||save.gold<item.cost?'disabled':''}>${itemIcon(id)}<b>${item.name}</b><small>${itemStats(item)}</small><span>${save.owned.includes(id)?'OWNED':'◈ '+item.cost}</span></button>`).join('')}</div><button class="primary" data-potion-buy ${save.gold<40||save.potions>=99?'disabled':''}>HEALING POTION · 40 GOLD</button>`);
   if(tab==='quests')$('panelBody').innerHTML=questPanel();
   if(tab==='camp')$('panelBody').innerHTML=campPanel();
   if(tab==='gear'){const preview=$('heroPreview');drawHero(preview.getContext('2d'),120,200,240,false);}
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); hud();
 }
-function enter(n) { if(!Number.isInteger(n)||n<1||n>floors.length)return;floor=n;room=0;hp=stats(save).maxHp;mini=null;run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:hp};rewardUntil=0;shield=0;cooldown={};nextSlash=nextDodge=0;stamina=100;playerStunned=regenAt=attackCount=0;releaseGuard();paused=false;$('panel').hidden=true;spawn(); }
+function renderHome(){
+  const cleared=Object.values(save.bestStars).filter(Boolean).length,total=Object.values(save.bestStars).reduce((a,b)=>a+b,0);
+  $('homeProgress').innerHTML=`<b>LV ${save.level} · ${save.gold} GOLD</b><span>${cleared} / 6 ด่าน · ★ ${total} / 18</span><progress value="${save.xp}" max="${save.level*100}" aria-label="Experience"></progress>`;
+  $('start').hidden=homeView!=='hall';
+  $('homeBody').innerHTML=homeView==='hall'?`<div class="hallTitle"><small>A CHRONICLE OF ASH & STEEL</small><h1>EMBER<br>BLADE</h1><p>THE SIX FORSAKEN HALLS</p></div><div class="hallStory"><span>บทที่ ${save.unlocked} / VI</span><h2>${floors[save.unlocked-1]}</h2><p>อ่านท่าศัตรู ตั้งรับ แล้วชิงจังหวะสวนกลับ</p></div>`:
+    `<div class="mapHeading"><button data-home="hall">← โถงหลัก</button><h1>THE EXPEDITION</h1><p>เลือกด่าน · ชนะบอสเพื่อเปิดเส้นทางถัดไป</p></div><div class="stageMap">${FLOORS.map((f,i)=>`<button class="stageNode ${selectedFloor===i+1?'selected':''}" data-select-floor="${i+1}" ${i>=save.unlocked?'disabled':''}><span class="stageNumber">${i>=save.unlocked?'◇':String(i+1).padStart(2,'0')}</span><span><b>${f.name}</b><small>${i>=save.unlocked?'LOCKED · ผ่านด่านก่อนหน้า':save.bestStars[i+1]?'CLEARED':'UNEXPLORED'}</small></span><span class="mapStars">${'★'.repeat(save.bestStars[i+1]||0)}${'☆'.repeat(3-(save.bestStars[i+1]||0))}</span></button>`).join('')}</div><div class="expeditionDetail"><small>THREE ENCOUNTERS · ONE BOSS</small><h2>${floors[selectedFloor-1]}</h2><p>${FLOORS[selectedFloor-1].enemies.map(t=>enemyTypes[t]).join(' → ')}</p><div class="mapLoot">${FLOORS[selectedFloor-1].drops.map(id=>`<span>${itemIcon(id)}<small>${ITEMS[id].name}</small></span>`).join('')}</div><button class="primary" data-embark="${selectedFloor}" ${spritesLoaded<Object.keys(sprites).length?'disabled':''}>ออกเดินทาง · FLOOR ${selectedFloor}</button></div>`;
+}
+function goHome(view='hall'){
+  phase='home';homeView=view;selectedFloor=Math.min(save.unlocked,Math.max(1,selectedFloor));paused=false;attack=null;pendingSlash=null;enemy=null;mini=null;releaseGuard();pointer=null;trail=[];particles=[];cuts=[];hitStop=0;heroAction={type:'idle',dir:'right',at:time};$('panel').hidden=true;$('intro').hidden=false;renderHome();hud();
+}
+function enter(n) { if(!Number.isInteger(n)||n<1||n>floors.length)return;floor=n;room=0;hp=stats(save).maxHp;mini=null;run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:hp};rewardUntil=0;hitStop=0;particles=[];cuts=[];flash=0;heroAction={type:'idle',dir:'right',at:time};shield=0;cooldown={};nextSlash=nextDodge=0;stamina=100;playerStunned=regenAt=attackCount=0;releaseGuard();paused=false;$('panel').hidden=true;spawn(); }
 function drinkPotion(){if(phase!=='combat'||paused||playerStunned>time||hp>=stats(save).maxHp||!save.potions)return;save.potions--;run.potions++;hp=Math.min(stats(save).maxHp,hp+50);say('+50 HP · HEALING POTION');persist();hud();}
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
-  if(b.id==='start'){$('intro').hidden=true;enter(1);}
+  if(b.id==='start'){homeView='map';selectedFloor=save.unlocked;renderHome();}
+  if(b.dataset.home)goHome(b.dataset.home);
+  if(b.dataset.selectFloor&&Number(b.dataset.selectFloor)<=save.unlocked){selectedFloor=Number(b.dataset.selectFloor);renderHome();}
+  if(b.dataset.embark&&Number(b.dataset.embark)<=save.unlocked&&spritesLoaded===Object.keys(sprites).length){$('intro').hidden=true;enter(Number(b.dataset.embark));}
+  if(b.dataset.hub){tab=b.dataset.hub;openPanel();}
   if(b.id==='heroBtn'||b.id==='menuBtn')openPanel();
-  if(b.hasAttribute('data-close')){ mini=null;$('panel').hidden=true;paused=false; }
+  if(b.hasAttribute('data-close')){ mini=null;$('panel').hidden=true;paused=false;if(phase==='home')renderHome(); }
   if(b.dataset.tab){mini=null;tab=b.dataset.tab;renderPanel();}
   if(b.dataset.quest){const reward=claimQuest(save,b.dataset.quest);if(reward){campNotice=rewardText(reward);persist();renderPanel();}}
   if(b.dataset.mini)startMini(b.dataset.mini);
@@ -215,20 +243,20 @@ document.addEventListener('click',e=>{
   if(b.hasAttribute('data-potion-buy')&&save.gold>=40&&save.potions<99){save.gold-=40;save.potions++;persist();renderPanel();}
   if(b.dataset.buy && buy(save,b.dataset.buy)){persist();renderPanel();}
   if(b.dataset.upgrade){const k=b.dataset.upgrade,cost=80+save.upgrades[k]*50;if(save.upgrades[k]<10 && save.gold>=cost){save.gold-=cost;save.upgrades[k]++;if(k==='vigor')hp+=12;persist();renderPanel();}}
-  if(b.dataset.floor&&Number(b.dataset.floor)<=save.unlocked)enter(Number(b.dataset.floor));
-  if(b.id==='nextFloor')enter(phase==='dead'?floor:floor%floors.length+1);
+  if(b.id==='nextFloor'){selectedFloor=phase==='dead'?floor:Math.min(save.unlocked,floor+1);goHome('map');}
 });
 document.querySelectorAll('[data-dodge]').forEach(b=>{b.setAttribute('aria-label','Dodge '+b.dataset.dodge);b.addEventListener('pointerdown',e=>{e.preventDefault();evade(b.dataset.dodge);});});
 $('blockBtn').addEventListener('pointerdown',e=>{e.preventDefault();if(guardPointer!==null)return;guardPointer=e.pointerId;$('blockBtn').setPointerCapture(e.pointerId);setBlocking(true);});
 for(const name of ['pointerup','pointercancel','lostpointercapture']) $('blockBtn').addEventListener(name,e=>{if(e.pointerId===guardPointer){guardPointer=null;setBlocking(guardKey);}});
 const point=e=>{const r=canvas.getBoundingClientRect();return [(e.clientX-r.left)*240/r.width,(e.clientY-r.top)*400/r.height];};
-canvas.addEventListener('pointerdown',e=>{if(phase!=='combat'||paused||blocking||time<playerStunned||pointer!==null)return;pointer=e.pointerId;trail=[point(e)];canvas.setPointerCapture(pointer);});
-canvas.addEventListener('pointermove',e=>{if(e.pointerId===pointer){const p=point(e);if(Math.hypot(p[0]-trail.at(-1)[0],p[1]-trail.at(-1)[1])>2)trail.push(p);}});
+function swipe(points){const dx=points.at(-1)[0]-points[0][0],dy=points.at(-1)[1]-points[0][1];if(Math.hypot(dx,dy)<18)return false;slash(Math.abs(dx)>Math.abs(dy)?dx>0?'right':'left':dy>0?'down':'up');return true;}
+canvas.addEventListener('pointerdown',e=>{if(phase!=='combat'||paused||blocking||time<playerStunned||pointer!==null)return;pointer=e.pointerId;pointerSlashed=false;trail=[point(e)];canvas.setPointerCapture(pointer);});
+canvas.addEventListener('pointermove',e=>{if(e.pointerId===pointer){const p=point(e);if(Math.hypot(p[0]-trail.at(-1)[0],p[1]-trail.at(-1)[1])>2)trail.push(p);if(!pointerSlashed&&!stats(save).magic)pointerSlashed=swipe(trail);}});
 canvas.addEventListener('pointerup',e=>{if(e.pointerId!==pointer)return;trail.push(point(e));const points=trail;pointer=null;
-  if(stats(save).magic)cast(points);else{const dx=points.at(-1)[0]-points[0][0],dy=points.at(-1)[1]-points[0][1];if(Math.hypot(dx,dy)>14)slash(Math.abs(dx)>Math.abs(dy)?dx>0?'right':'left':dy>0?'down':'up');}
+  if(stats(save).magic)cast(points);else if(!pointerSlashed)swipe(points);
   trail=[];
 });
-canvas.addEventListener('pointercancel',()=>{pointer=null;trail=[];});
+for(const name of ['pointercancel','lostpointercapture'])canvas.addEventListener(name,()=>{pointer=null;trail=[];});
 window.addEventListener('keydown',e=>{if(e.code==='Space'){e.preventDefault();guardKey=true;setBlocking(true);return;}const d={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'}[e.key];if(d){e.preventDefault();e.shiftKey?evade(d):!stats(save).magic&&slash(d);}});
 window.addEventListener('keyup',e=>{if(e.code==='Space'){e.preventDefault();guardKey=false;setBlocking(guardPointer!==null);}});
 window.addEventListener('blur',releaseGuard);
@@ -243,8 +271,10 @@ function gearSprite(context,id,x,y,w,h=w,angle=0){
 function drawHero(context,x,y,size,back){
   const sheet=sprites.hero;if(!sheet.complete||!sheet.naturalWidth)return;
   const cw=sheet.naturalWidth/4,ch=sheet.naturalHeight/2,height=size*ch/cw;
+  if(back){drawHeroRig(context,x,y,size,cw,ch);return;}
   context.save();context.imageSmoothingEnabled=false;
   const left=x-size/2,top=y-height/2;
+  context.fillStyle='#34433f';context.strokeStyle='#a99d76';context.lineWidth=2;context.beginPath();context.ellipse(x,y+height*.48,size*.35,size*.06,0,0,Math.PI*2);context.fill();context.stroke();
   gearSprite(context,save.equipment.cloak,x,y+height*.07,size*.65,height*.65);
   // Aligned atlas strips allow each armor slot to change independently.
   for(const [slot,a,b] of [['boots',.77,1],['pants',.55,.77],['armor',.28,.55],['helm',0,.28]]){
@@ -259,13 +289,36 @@ function drawHero(context,x,y,size,back){
   gearSprite(context,save.equipment.ring1,x-size*.25,y+height*.03,size*.065);
   gearSprite(context,save.equipment.ring2,x+size*.25,y+height*.03,size*.065);
   const main=ITEMS[save.equipment.weapon];
-  gearSprite(context,save.equipment.weapon,x+size*.3,y+(back&&swing>time?-height*.08:0),size*(main?.hands===2?.63:.46),height*(main?.hands===2?.7:.48),back&&swing>time?.8:0);
+  gearSprite(context,save.equipment.weapon,x+size*.3,y,size*(main?.hands===2?.63:.46),height*(main?.hands===2?.7:.48));
   if(main?.hands!==2)gearSprite(context,save.equipment.offhand,x-size*(back&&blocking?.18:.3),y+height*.05,size*.39,height*.36);
   context.restore();
 }
+function drawHeroRig(c,x,y,w,cw,ch){
+  const h=w*ch/cw,p=heroPose(blocking?'guard':heroAction.type,heroAction.dir,time-heroAction.at);
+  const piece=(slot,a,b,l,r)=>{const item=ITEMS[save.equipment[slot]];c.filter=item?.hue?`hue-rotate(${item.hue}deg)`:'none';c.drawImage(sprites.hero,(item?.look||0)*cw+l*cw,ch+a*ch,(r-l)*cw,(b-a)*ch,(l-.5)*w,(a-.5)*h,(r-l)*w,(b-a)*h);c.filter='none';};
+  const pivot=(px,py,angle,fn)=>{c.save();c.translate(px*w,py*h);c.rotate(angle);c.translate(-px*w,-py*h);fn();c.restore();};
+  c.save();c.translate(x+p.x,y+p.y+Math.sin(time/650)*.7);c.imageSmoothingEnabled=false;
+  for(const side of [-1,1])pivot(side*.13,.08,side*p.leg,()=>{piece('pants',.55,.77,side<0?0:.5,side<0?.5:1);piece('boots',.77,1,side<0?0:.5,side<0?.5:1);});
+  pivot(0,.08,p.torso,()=>{
+    piece('armor',.28,.57,.3,.7);piece('helm',0,.28,0,1);
+    gearSprite(c,save.equipment.cloak,0,h*.03,w*.5,h*.59,Math.sin(time/550)*.025-p.torso*.3);
+    gearSprite(c,save.equipment.neck,0,-h*.22,w*.14);
+    for(const side of [-1,1])pivot(side*.2,-.2,side===1?p.arm:p.offarm,()=>{
+      piece('armor',.28,.44,side<0?0:.67,side<0?.33:1);
+      pivot(side*.26,-.06,side===1?p.forearm:0,()=>{
+        piece('armor',.44,.64,side<0?0:.67,side<0?.33:1);
+        gearSprite(c,save.equipment[side===1?'ring1':'ring2'],side*w*.29,h*.04,w*.065);
+        const id=save.equipment[side===1?'weapon':'offhand'],item=ITEMS[id];
+        if(side===1||ITEMS[save.equipment.weapon]?.hands!==2)gearSprite(c,id,side*w*.29,-h*.04,w*(item?.hands===2?.62:.43),h*(side===1?.52:.32),side===1?-.25:0);
+      });
+    });
+  });c.restore();
+}
 function enemyPosition() {
   const impact = enemy?.strikeUntil>time ? Math.sin((enemy.strikeUntil-time)/180*Math.PI)*8 : 0;
-  return {x:144,y:212+impact};
+  const recoil=enemy?.hit>time?Math.sin((enemy.hit-time)/260*Math.PI)*9:0;
+  const anticipation=attack?Math.min(1,(time-(attack.started??time))/400)*-3:0,lean=impact+anticipation,dir=attack?.dir||enemy?.dir;
+  return {x:144+({left:-1,right:1}[enemy?.hitDir]||0)*recoil+({left:-1,right:1}[dir]||0)*lean,y:212+impact+({up:-1,down:1}[enemy?.hitDir]||0)*recoil+({up:-1,down:1}[dir]||0)*anticipation};
 }
 function drawEnemy() {
   const sheet=sprites[enemy?.type || 'brute'];
@@ -311,12 +364,15 @@ function resolveAttack() {
     else{damage=0;enemy.openUntil=time+550;progress(save,'defenses');persist();say(`BLOCK · COUNTER! −${ATTACKS[kind].cost} STAMINA`);effects.push({x:88,y:295,text:'✦',color:'#94e5ff',until:time+400});}
   }else if(shield){shield--;damage=0;enemy.openUntil=time+900;progress(save,'defenses');persist();say('WARD BLOCK · COUNTER!');}
   else say(kind==='sweep'?'ท่ากวาดต้อง BLOCK!':'HIT! ปัดสวน หรือหลบตามลูกศร');
-  if(damage){run.damage+=Math.min(hp,damage);hp=Math.max(0,hp-damage);flash=time+170;}
+  if(damage){run.damage+=Math.min(hp,damage);hp=Math.max(0,hp-damage);flash=time+420;animateHero('hurt',attack.dir);pendingSlash=null;impact(65,295,attack.dir,'blood',2);}
+  else impact(85,282,attack.dir,'spark',1.3);
   attack=null;nextAttack=time+1100;
   if(!hp){phase='dead';openPanel();}
 }
 function draw(){
+  if(phase==='home')return;
   ctx.setTransform(2,0,0,2,0,0);ctx.imageSmoothingEnabled=false;
+  ctx.save();if(!reducedMotion&&shakeUntil>time){const strength=shakePower*(shakeUntil-time)/180;ctx.translate(Math.sin(time*1.7)*strength,Math.cos(time*1.3)*strength);}
   const palettes=FLOORS[floor-1].colors;
   rect(0,0,240,400,'#171522');rect(0,45,240,155,palettes[0]);
   for(let row=0;row<8;row++)for(let col=-1;col<7;col++){const x=col*44+(row%2)*22,y=48+row*20;rect(x+1,y+1,42,18,palettes[1]);rect(x+2,y+2,40,2,palettes[2]);rect(x+4,y+15,36,2,palettes[0]);}
@@ -335,20 +391,24 @@ function draw(){
   const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
   ctx.save();ctx.translate(60+dx,308+dy);ctx.scale(1,aspect);drawHero(ctx,0,0,112,true);ctx.restore();
   if(playerStunned>time){ctx.fillStyle='#ffd293';ctx.font='bold 10px monospace';ctx.fillText('GUARD BROKEN',12,252);}
-  if(swing>time){ctx.strokeStyle='#fff4b1';ctx.lineWidth=4;ctx.beginPath();ctx.arc(140,224,52,-2,.7);ctx.stroke();ctx.strokeStyle='#e7a165';ctx.lineWidth=2;ctx.beginPath();ctx.arc(140,224,58,-2,.4);ctx.stroke();}
+  cuts=cuts.filter(c=>time-c.at<190);for(const cut of cuts){ctx.save();ctx.translate(cut.x,cut.y);ctx.rotate({up:-Math.PI/2,down:Math.PI/2,left:Math.PI,right:0}[cut.dir]);ctx.globalAlpha=1-(time-cut.at)/190;poly([[-48,8],[-15,-7],[43,0],[4,3]],'#fff3c2');ctx.restore();}
+  particles=particles.filter(p=>time-p.at<p.life);for(const p of particles){const age=(time-p.at)/1000;ctx.globalAlpha=1-(time-p.at)/p.life;rect(p.x+p.vx*age,p.y+p.vy*age+75*age*age,p.size,p.size,p.color);}ctx.globalAlpha=1;
   if(shield){ctx.strokeStyle='#ad97ff';ctx.lineWidth=2;ctx.strokeRect(21+dx,257+dy,79,126);}
   if(stunned>time){ctx.fillStyle='#f5e9a4';ctx.font='10px monospace';ctx.fillText('✦  STUN  ✦',115,155);}
   if(trail.length>1){ctx.strokeStyle=stats(save).magic?'#c8a8ff':'#fff1c2';ctx.lineWidth=3;ctx.beginPath();trail.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.stroke();}
   effects=effects.filter(e=>e.until>time);for(const e of effects){ctx.fillStyle=e.color;ctx.font='bold 18px monospace';ctx.fillText(e.text,e.x,e.y-(700-(e.until-time))/30);}
-  if(flash>time)rect(0,0,240,400,'#e8494933');
+  ctx.restore();
+  if(flash>time){const glow=ctx.createRadialGradient(120,200,40,120,200,240);glow.addColorStop(0,'#8d001000');glow.addColorStop(1,`rgba(220,24,43,${(flash-time)/420*.8})`);ctx.fillStyle=glow;ctx.fillRect(0,0,240,400);}
   if(phase==='walking')rect(0,0,240,400,`rgba(12,10,20,${Math.sin((transition-time)/1000*Math.PI)*.65})`);
 }
-function loop(now){const dt=Math.min(50,now-last);last=now;updateMini(now);if(now>=dailyCheck){dailyCheck=now+1000;if(paused&&['quests','camp'].includes(tab)&&save.daily?.day!==dayKey()){daily(save);persist();if(!mini)renderPanel();}}if(!paused && phase!=='intro'&&!document.hidden){time+=dt;
+function resolvePlayerStrike(){if(pendingSlash&&time>=pendingSlash.at){const strike=pendingSlash;pendingSlash=null;hit(strike.damage,'#fff0ae',strike.dir);}}
+function loop(now){let dt=Math.min(50,now-last);last=now;updateMini(now);if(now>=dailyCheck){dailyCheck=now+1000;if(paused&&['quests','camp'].includes(tab)&&save.daily?.day!==dayKey()){daily(save);persist();if(!mini)renderPanel();}}if(!paused && phase!=='home'&&!document.hidden){const stopped=Math.min(hitStop,dt);hitStop-=stopped;dt-=stopped;time+=dt;
   if(phase==='walking'&&time>=transition)finishRoom();
   if(phase==='combat'){
+    resolvePlayerStrike();
     if(time>=regenAt)stamina=regenStamina(stamina,dt/1000,blocking);
     if(attack&&time>=attack.at)resolveAttack();
     if(phase==='combat'&&!attack&&time>=nextAttack&&time>=stunned){const pattern=enemy.type==='frost'?['normal','heavy','normal','sweep']:enemy.type==='spider'?['normal','normal','heavy','normal']:enemy.type==='demon'?['heavy','normal','sweep','normal']:['normal','normal','heavy','normal','sweep'];const kind=pattern[attackCount++%pattern.length],duration=kind==='normal'?Math.max(650,1050-floor*70):1300;attack={dir:Object.keys(DIR)[Math.floor(Math.random()*4)],kind,started:time,at:time+duration};enemy.dir=attack.dir;}
   }
 }hud();draw();requestAnimationFrame(loop);}
-hud();requestAnimationFrame(loop);
+renderHome();hud();requestAnimationFrame(loop);
