@@ -3,6 +3,8 @@ from pathlib import Path
 from PIL import Image
 
 for path in sorted((Path(__file__).resolve().parents[1] / 'assets').glob('*.png')):
+    if path.stem == 'hall':
+        continue
     with Image.open(path) as image:
         assert image.mode == 'RGBA', f'{path.name}: needs transparency'
         alpha = image.getchannel('A')

@@ -103,6 +103,25 @@ export function equip(save,slot,id){
   return true;
 }
 export const DIR = { up: 'down', down: 'up', left: 'right', right: 'left' };
+export function heroPose(action,dir,elapsed){
+  const rest={torso:0,arm:0,forearm:0,offarm:0,leg:0,x:0,y:0};
+  if(action==='guard')return {...rest,torso:-.09,arm:-.35,forearm:-.7,offarm:.85,leg:.1,y:2};
+  if(elapsed<0||elapsed>=280)return rest;
+  const p=elapsed/280,weight=Math.sin(Math.PI*p);
+  if(action==='hurt')return {...rest,torso:-.24*weight,x:-5*weight,y:3*weight,arm:.45*weight,leg:-.15*weight};
+  if(action==='dodge')return {...rest,torso:(dir==='left'?-.3:.3)*weight,leg:.32*weight,arm:-.5*weight,y:4*weight};
+  if(action==='cast')return {...rest,arm:-1.5*weight,forearm:-.8*weight,offarm:1.2*weight,torso:-.08*weight,y:-3*weight};
+  if(action!=='slash')return rest;
+  // Windup -> contact -> recovery: the weapon follows the arm, not an independent pivot.
+  const wind=p<.2?p/.2:Math.max(0,1-(p-.2)/.22),strike=p<.2?0:p<.4?(p-.2)/.2:Math.pow((1-p)/.6,2);
+  const poses={right:[-1.6,1.3,-.18,.22],left:[1.1,-1.9,.18,-.24],up:[.55,-2.6,.12,-.12],down:[-2.8,.5,-.12,.28]};
+  const [a,b,c,d]=poses[dir]||poses.right;
+  return {arm:a*wind+b*strike,forearm:-.45*wind+.3*strike,offarm:-.25*strike,torso:c*wind+d*strike,leg:.22*strike-.07*wind,x:8*strike-2*wind,y:dir==='up'?-4*strike:3*strike};
+}
+export function impactParticles(dir,count,random=Math.random){
+  const angle={up:-Math.PI/2,down:Math.PI/2,left:Math.PI,right:0}[dir]??0;
+  return Array.from({length:count},()=>{const a=angle+(random()-.5)*1.1,speed=35+random()*95;return {vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,life:260+random()*330,size:1+random()*2};});
+}
 export const ATTACKS = {
   normal: { label: 'PARRY · BLOCK · DODGE', cost: 24, color: '#ff535a' },
   heavy: { label: 'BLOCK · DODGE', cost: 42, color: '#75d8ff' },
