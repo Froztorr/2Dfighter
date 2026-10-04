@@ -1,5 +1,5 @@
 import { createPhaserRenderer } from './phaser-renderer.mjs';
-import { impactParticles, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
+import { HERO_ACTIONS, heroPose, impactParticles, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('scene'), background=document.createElement('canvas'), ctx = background.getContext('2d');
 background.width=480;background.height=800;
@@ -16,7 +16,7 @@ try { const stored = localStorage.getItem('emberblade-v1'); if (stored) save = l
 let floor = 1, room = 0, hp = stats(save).maxHp, enemy, phase = 'home', paused = false, tab = 'gear';
 let time = 0, last = performance.now(), attack = null, nextAttack = 1800, stunned = 0, nextSlash = 0, nextDodge = 0;
 let trail = [], pointer = null, pointerSlashed=false, effects = [], flash = 0, dodge = null, shield = 0, cooldown = {}, transition = 0;
-let stamina=100, blocking=false, guardPointer=null, guardKey=false, playerStunned=0, regenAt=0, attackCount=0;
+let stamina=100, blocking=false, guardPointer=null, guardKey=false, playerStunned=0, stunStarted=0, deathPanelAt=0, victoryAt=0, regenAt=0, attackCount=0;
 let selectedSlot='weapon', rewardUntil=0, run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:100};
 let mini=null, campNotice='', dailyCheck=0;
 let heroAction={type:'idle',dir:'right',at:0},pendingSlash=null,particles=[],cuts=[],shakeUntil=0,shakePower=0,hitStop=0,homeView='hall',selectedFloor=1;
@@ -40,6 +40,7 @@ const atlasCuts = {
 function persist() { try { localStorage.setItem('emberblade-v1', JSON.stringify(save)); } catch { say('Storage unavailable — progress lasts this session'); } }
 function say(text) { $('message').textContent = text; }
 function animateHero(type,dir='right'){heroAction={type,dir,at:time};}
+function currentHero(){let type=heroAction.type,at=heroAction.at;if(phase==='dead'){type='death';}else if(time<playerStunned){type='stun';at=stunStarted;}else if(blocking&&!(type==='block'&&time-at<HERO_ACTIONS.block.duration)){type='guard';}else if(time-at>=(HERO_ACTIONS[type]?.duration??0)){type=phase==='walking'?(time<victoryAt?'idle':time-victoryAt<1100?'victory':'walk'):'idle';at=type==='victory'?victoryAt:at;}return {action:type,dir:heroAction.dir,elapsed:time-at};}
 function impact(x,y,dir,kind='blood',power=1){
   const colors=kind==='blood'?['#8c1232','#cd2940','#f26760']:kind==='magic'?['#eee5ff','#b89afa','#785dca']:['#fff7c0','#e6b36c','#9ae5ec'];
   for(const p of impactParticles(dir,Math.round(15*power)))particles.push({...p,x,y,at:time,color:colors[Math.floor(Math.random()*colors.length)]});
@@ -73,12 +74,12 @@ function hud() {
   $('gold').textContent = save.gold; $('floor').textContent = `${floor} / ${floors.length} · ROOM ${room+1}`;
   $('spellHint').hidden = !s.magic;
   const cue = $('telegraph'), kind=attack?.kind || 'normal';
-  $('attackArrow').textContent=attack ? arrows[attack.dir] : '';
+  const directional=!!attack&&kind==='normal';$('attackArrow').hidden=!directional;$('attackArrow').textContent=directional?arrows[attack.dir]:'';cue.dataset.directional=String(directional);cue.setAttribute('aria-label',attack?`${ATTACKS[kind].label}${directional?' '+attack.dir:''}`:'');
   $('attackRule').textContent=attack ? ATTACKS[kind].label : '';
   cue.style.setProperty('--cue-color',ATTACKS[kind].color);
   cue.dataset.kind=kind;
   if($('attackIcon').dataset.kind!==kind){$('attackIcon').innerHTML=cueIcons[kind];$('attackIcon').dataset.kind=kind;}
-  cue.style.left='60%'; cue.style.top=`${(enemyPosition().y+(attack?.dir==='up'?16:0))/4}%`;
+  cue.style.left='60%'; cue.style.top=`${(enemyPosition().y+(directional&&attack.dir==='up'?16:0))/4}%`;
   cue.classList.toggle('show', !!attack); cue.classList.toggle('danger', !!attack && attack.at-time <= 450);
   if (s.magic) $('spellHint').textContent = ['circle','square','spiral'].map((k,i) => `${['○ FIRE','□ WARD','◎ NOVA'][i]} ${cooldown[k]>time ? ((cooldown[k]-time)/1000).toFixed(1)+'s' : 'READY'}`).join(' · ');
 }
@@ -95,7 +96,7 @@ function hit(damage, color = '#fff0ae',dir=heroAction.dir) {
   cuts.push({dir,at:time,x:144,y:212});
   effects.push({ x:145, y:190, text:String(damage), color, until:time+700 });
   if (!enemy.hp) {
-    attack = null; phase = 'walking'; transition = time+1500; say('ENEMY DEFEATED');
+    attack = null; phase = 'walking'; transition = time+1500;victoryAt=time+200;releaseGuard(); say('ENEMY DEFEATED');
     const gold=20+enemy.level*5,xp=25+enemy.level*10;
     const loot=FLOORS[floor-1].drops[room],duplicate=save.owned.includes(loot),total=gold+(duplicate?30:0);
     grant(save,{gold:total,xp});run.gold+=total;run.xp+=xp;progress(save,'kills');
@@ -118,6 +119,7 @@ function defensive(dir,type) {
   if (!attack) return false;
   const result = defend(attack.dir,dir,type,attack.at-time,attack.kind);
   if (!result) return false;
+  if(type==='slash')animateHero('parry',dir);
   attack = null; stunned = result==='perfect' ? time+2100 : 0; nextAttack = time+(result==='perfect'?2900:1300);
   enemy.openUntil=result==='perfect'?stunned:time+Math.max(600,1150-enemy.level*55);
   progress(save,'defenses');persist();
@@ -136,7 +138,7 @@ function evade(dir) {
   setBlocking(false);
   nextDodge = time+650; dodge = {dir,until:time+260};
   animateHero('dodge',dir);pendingSlash=null;
-  if (!defensive(dir,'dodge')) say(attack?.kind==='sweep'?'ท่ากวาด • กดโล่เพื่อ BLOCK':'Dodge: ตามทิศลูกศร เมื่อใกล้โดน');
+  if (!defensive(dir,'dodge')) say(attack&&attack.kind!=='normal'?'ท่านี้ต้อง BLOCK • กดโล่':'Dodge: ตามทิศลูกศร เมื่อใกล้โดน');
 }
 function cast(points) {
   if (phase!=='combat' || paused || blocking || time<playerStunned) return;
@@ -150,11 +152,12 @@ function cast(points) {
   effects.push({x:140,y:210,text:spell==='square'?'◇':'✺',color:'#bb9aff',until:time+850});
 }
 function setBlocking(value) {
-  blocking = !!value && stats(save).canBlock && phase==='combat' && !paused && time>=playerStunned;
+  const previous=blocking;blocking = !!value && stats(save).canBlock && phase==='combat' && !paused && time>=playerStunned;
+  if(blocking&&!previous)animateHero('guard');else if(!blocking&&previous&&['guard','block'].includes(heroAction.type))animateHero('idle');
   if (blocking) { pointer=null;trail=[];pendingSlash=null; }
 }
 function releaseGuard() { guardPointer=null;guardKey=false;setBlocking(false); }
-function openPanel() { paused = true; releaseGuard(); pointer=null; trail=[]; $('panel').hidden=false; renderPanel(); }
+function openPanel() { if(phase==='dead'&&time<deathPanelAt)return;paused = true; releaseGuard(); pointer=null; trail=[]; $('panel').hidden=false; renderPanel(); }
 function itemIcon(id){const i=ITEMS[id],cols=i?.atlas?4:6,rows=i?.atlas?3:6;return i?`<span class="gearIcon ${i.atlas?'relicIcon':''}" style="background-position:${i.icon%cols*100/(cols-1)}% ${Math.floor(i.icon/cols)*100/(rows-1)}%"></span>`:'<span class="emptySlot">＋</span>';}
 function itemStats(i){return [i.attack?`ATK +${i.attack}`:'',i.armor?`DEF +${i.armor}`:'',i.health?`HP +${i.health}`:'',i.hands===2?'2 HANDS':i.shield?'BLOCK':''].filter(Boolean).join(' · ');}
 function rewardText(r){return `+${r.gold} GOLD · +${r.xp||0} EXP${r.potions?' · +'+r.potions+' POTION':''}`;}
@@ -223,8 +226,8 @@ function renderHome(){
 function goHome(view='hall'){
   phase='home';homeView=view;selectedFloor=Math.min(save.unlocked,Math.max(1,selectedFloor));paused=false;attack=null;pendingSlash=null;enemy=null;mini=null;releaseGuard();pointer=null;trail=[];particles=[];cuts=[];hitStop=0;heroAction={type:'idle',dir:'right',at:time};$('panel').hidden=true;$('intro').hidden=false;renderHome();hud();
 }
-function enter(n) { if(!Number.isInteger(n)||n<1||n>floors.length)return;floor=n;room=0;hp=stats(save).maxHp;mini=null;run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:hp};rewardUntil=0;hitStop=0;particles=[];cuts=[];flash=0;heroAction={type:'idle',dir:'right',at:time};shield=0;cooldown={};nextSlash=nextDodge=0;stamina=100;playerStunned=regenAt=attackCount=0;releaseGuard();paused=false;$('panel').hidden=true;spawn(); }
-function drinkPotion(){if(phase!=='combat'||paused||playerStunned>time||hp>=stats(save).maxHp||!save.potions)return;save.potions--;run.potions++;hp=Math.min(stats(save).maxHp,hp+50);say('+50 HP · HEALING POTION');persist();hud();}
+function enter(n) { if(!Number.isInteger(n)||n<1||n>floors.length)return;floor=n;room=0;hp=stats(save).maxHp;mini=null;run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:hp};rewardUntil=0;hitStop=0;particles=[];cuts=[];flash=0;heroAction={type:'idle',dir:'right',at:time};shield=0;cooldown={};nextSlash=nextDodge=0;stamina=100;playerStunned=stunStarted=deathPanelAt=victoryAt=regenAt=attackCount=0;releaseGuard();paused=false;$('panel').hidden=true;spawn(); }
+function drinkPotion(){if(phase!=='combat'||paused||playerStunned>time||hp>=stats(save).maxHp||!save.potions)return;save.potions--;run.potions++;hp=Math.min(stats(save).maxHp,hp+50);animateHero('heal');say('+50 HP · HEALING POTION');persist();hud();}
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   if(b.id==='start'){homeView='map';selectedFloor=save.unlocked;renderHome();}
@@ -297,7 +300,7 @@ function drawEnemy() {
   const cuts=atlasCuts[enemy?.type || 'brute']||{x:[0,cellW,cellW*2,cellW*3,cellW*4],y:Array(4).fill(Array.from({length:7},(_,i)=>cellH*i))};
   const sx=cuts.x[column],sy=cuts.y[column][row],sw=cuts.x[column+1]-sx,sh=cuts.y[column][row+1]-sy;
   const scale=size/cellW;
-  renderer.syncEnemy({sheet,type:enemy?.type||'brute',key:`${row}:${column}`,sx,sy,sw,sh,column,row,cellH,x,y,size,aspect,mirror:enemy?.type==='demon'&&row===3,alpha:phase==='walking'?Math.max(0,Math.min(1,(transition-time)/500)):1});
+  renderer.syncEnemy({sheet,type:enemy?.type||'brute',key:`${row}:${column}`,sx,sy,sw,sh,column,row,cellH,x,y,size,aspect,mirror:enemy?.type==='demon'&&row===3,danger:attack&&attack.kind!=='normal'?{remaining:attack.at-time,clock:time,reducedMotion}:null,alpha:phase==='walking'?Math.max(0,Math.min(1,(transition-time)/500)):1});
 
 }
 function resolveAttack() {
@@ -306,14 +309,14 @@ function resolveAttack() {
   enemy.dir=attack.dir;enemy.strikeUntil=time+180;enemy.recoverUntil=time+480;
   if(blocking){
     const result=blockHit(stamina,kind);stamina=result.stamina;regenAt=time+800;
-    if(result.broken){playerStunned=time+1400;releaseGuard();say('GUARD BREAK · สตั้น!');}
-    else{damage=0;enemy.openUntil=time+550;progress(save,'defenses');persist();say(`BLOCK · COUNTER! −${ATTACKS[kind].cost} STAMINA`);effects.push({x:88,y:295,text:'✦',color:'#94e5ff',until:time+400});}
-  }else if(shield){shield--;damage=0;enemy.openUntil=time+900;progress(save,'defenses');persist();say('WARD BLOCK · COUNTER!');}
-  else say(kind==='sweep'?'ท่ากวาดต้อง BLOCK!':'HIT! ปัดสวน หรือหลบตามลูกศร');
-  if(damage){run.damage+=Math.min(hp,damage);hp=Math.max(0,hp-damage);flash=time+420;animateHero('hurt',attack.dir);pendingSlash=null;impact(65,295,attack.dir,'blood',2);}
+    if(result.broken){playerStunned=time+1400;stunStarted=time;releaseGuard();animateHero('stun');say('GUARD BREAK · สตั้น!');}
+    else{animateHero('block',attack.dir);damage=0;enemy.openUntil=time+550;progress(save,'defenses');persist();say(`BLOCK · COUNTER! −${ATTACKS[kind].cost} STAMINA`);effects.push({x:88,y:295,text:'✦',color:'#94e5ff',until:time+400});}
+  }else if(shield){animateHero('ward',attack.dir);shield--;damage=0;enemy.openUntil=time+900;progress(save,'defenses');persist();say('WARD BLOCK · COUNTER!');}
+  else say(kind!=='normal'?'ท่ากวาดต้อง BLOCK!':'HIT! ปัดสวน หรือหลบตามลูกศร');
+  if(damage){run.damage+=Math.min(hp,damage);hp=Math.max(0,hp-damage);flash=time+420;if(time>=playerStunned)animateHero('hurt',attack.dir);pendingSlash=null;impact(65,295,attack.dir,'blood',2);}
   else impact(85,282,attack.dir,'spark',1.3);
   attack=null;nextAttack=time+1100;
-  if(!hp){phase='dead';openPanel();}
+  if(!hp){phase='dead';releaseGuard();animateHero('death');deathPanelAt=time+1100;}
 }
 function draw(){
   if(phase==='home')return;
@@ -333,7 +336,7 @@ function draw(){
   if(floor===5){ctx.strokeStyle='#adacbf55';ctx.lineWidth=1;for(const anchor of [0,240]){for(let i=0;i<6;i++){ctx.beginPath();ctx.moveTo(anchor,50);ctx.lineTo(anchor+(anchor?-1:1)*90,60+i*24);ctx.stroke();}for(let i=1;i<4;i++){ctx.beginPath();ctx.arc(anchor,50,i*28,0,Math.PI);ctx.stroke();}}}
   if(floor===6){for(let i=0;i<10;i++){const y=215+i*19;rect((i*67)%210,y,25,2,'#ff7138');rect((i*67)%210+12,y+2,2,10,'#d84127');}}
   drawEnemy();
-  let dx=0,dy=0;if(dodge&&dodge.until>time){const v=Math.sin((dodge.until-time)/260*Math.PI)*19;dx=dodge.dir==='left'?-v:dodge.dir==='right'?v:0;dy=dodge.dir==='up'?-v:dodge.dir==='down'?v:0;}
+  const state=currentHero(),pose=heroPose(state.action,state.dir,state.elapsed),dx=pose.x,dy=pose.y;
   const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
 
   if(playerStunned>time){ctx.fillStyle='#ffd293';ctx.font='bold 10px monospace';ctx.fillText('GUARD BROKEN',12,252);}
@@ -349,6 +352,7 @@ function draw(){
 }
 function resolvePlayerStrike(){if(pendingSlash&&time>=pendingSlash.at){const strike=pendingSlash;pendingSlash=null;hit(strike.damage,'#fff0ae',strike.dir);}}
 function loop(now){let dt=Math.min(50,now-last);last=now;updateMini(now);if(now>=dailyCheck){dailyCheck=now+1000;if(paused&&['quests','camp'].includes(tab)&&save.daily?.day!==dayKey()){daily(save);persist();if(!mini)renderPanel();}}if(!paused && phase!=='home'&&!document.hidden){const stopped=Math.min(hitStop,dt);hitStop-=stopped;dt-=stopped;time+=dt;
+  if(phase==='dead'&&time>=deathPanelAt)openPanel();
   if(phase==='walking'&&time>=transition)finishRoom();
   if(phase==='combat'){
     resolvePlayerStrike();
@@ -358,8 +362,7 @@ function loop(now){let dt=Math.min(50,now-last);last=now;updateMini(now);if(now>
   }
 }hud();draw();}
 const renderer=createPhaserRenderer({canvas,background,sprites,tick:loop,getState:()=>{
-  let dx=0,dy=0;if(dodge&&dodge.until>time){const v=Math.sin((dodge.until-time)/260*Math.PI)*19;dx=dodge.dir==='left'?-v:dodge.dir==='right'?v:0;dy=dodge.dir==='up'?-v:dodge.dir==='down'?v:0;}
   const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
-  return {phase,paused,loaded:spritesLoaded===Object.keys(sprites).length,hero:{save,x:60+dx,y:308+dy,width:112,back:true,action:blocking?'guard':heroAction.type,dir:heroAction.dir,elapsed:time-heroAction.at,clock:time,aspect}};
+  return {phase,paused,loaded:spritesLoaded===Object.keys(sprites).length,hero:{save,x:60,y:308,width:112,back:true,...currentHero(),clock:time,aspect}};
 }});
 renderHome();hud();

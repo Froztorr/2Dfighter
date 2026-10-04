@@ -41,10 +41,11 @@ function addTexture(scene,key,sheet,rect){
 }
 export class PhaserHero {
   constructor(scene,sprites){
-    this.scene=scene;this.sprites=sprites;this.root=scene.add.container(0,0);this.body=scene.add.container(0,0);this.root.add(this.body);this.rearArms=scene.add.container(0,0);this.root.addAt(this.rearArms,0);
-    this.legs=[-1,1].map(side=>{const hip=scene.add.container(0,0),thigh=scene.add.image(0,0,'__WHITE'),knee=scene.add.container(0,0),shin=scene.add.image(0,0,'__WHITE');hip.add([thigh,knee]);knee.add(shin);this.root.addAt(hip,0);return {side,hip,thigh,knee,shin};});
+    this.scene=scene;this.sprites=sprites;this.root=scene.add.container(0,0);this.actor=scene.add.container(0,0);this.root.add(this.actor);this.rearEquipment=scene.add.container(0,0);this.rearArms=scene.add.container(0,0);this.body=scene.add.container(0,0);this.actor.add([this.rearEquipment,this.rearArms,this.body]);
+    this.legs=[-1,1].map(side=>{const hip=scene.add.container(0,0),thigh=scene.add.image(0,0,'__WHITE'),knee=scene.add.container(0,0),shin=scene.add.image(0,0,'__WHITE');hip.add([thigh,knee]);knee.add(shin);this.actor.addAt(hip,2);return {side,hip,thigh,knee,shin};});
     this.skirt=scene.add.image(0,0,'__WHITE');this.torso=scene.add.image(0,0,'__WHITE');this.head=scene.add.image(0,0,'__WHITE');this.cloak=scene.add.image(0,0,'__WHITE');this.neck=scene.add.image(0,0,'__WHITE');this.body.add([this.skirt,this.torso,this.cloak,this.head,this.neck]);
-    this.arms=['off','main'].map(side=>{const shoulder=scene.add.container(0,0),upper=scene.add.image(0,0,'__WHITE'),elbow=scene.add.container(0,0),fore=scene.add.image(0,0,'__WHITE'),wrist=scene.add.container(0,0),gear=scene.add.image(0,0,'__WHITE'),hand=scene.add.image(0,0,'__WHITE');shoulder.add([upper,elbow]);elbow.add([fore,wrist]);wrist.add([gear,hand]);this.body.add(shoulder);return {side,shoulder,upper,elbow,fore,wrist,gear,hand};});
+    this.frontEquipment=scene.add.container(0,0);this.body.add(this.frontEquipment);
+    this.arms=['off','main'].map(side=>{const shoulder=scene.add.container(0,0),upper=scene.add.image(0,0,'__WHITE'),elbow=scene.add.container(0,0),fore=scene.add.image(0,0,'__WHITE'),wrist=scene.add.container(0,0),gear=scene.add.image(0,0,'__WHITE'),hand=scene.add.image(0,0,'__WHITE');shoulder.add([upper,elbow]);elbow.add([fore,wrist]);wrist.add(hand);this.rearEquipment.add(gear);this.body.add(shoulder);return {side,shoulder,upper,elbow,fore,wrist,gear,hand};});
   }
   bodyPiece(image,name,slot,save,w,h,back,side=0){
     const item=ITEMS[save.equipment[slot]],look=item?.look||0,sheet=this.sprites.hero,cw=sheet.naturalWidth/4,ch=sheet.naturalHeight/2;
@@ -61,24 +62,27 @@ export class PhaserHero {
   sync({save,x,y,width=112,back=true,action='idle',dir='right',elapsed=0,clock=0,aspect=1}){
     const w=width,h=w*4/3,item=ITEMS[save.equipment.weapon],targetPose=heroPose(action,dir,elapsed);
     const key=`${action}:${dir}:${save.equipment.weapon}`;
-    if(this.actionKey!==key){
+    if(this.actionKey!==key||elapsed<(this.lastElapsed??0)){
       this.actionKey=key;this.fromRig=this.rig;this.fromPose=this.pose;
       if(this.transition)this.scene.tweens.killTweensOf(this.transition);
       this.transition={value:this.rig?0:1};
       if(this.rig)this.scene.tweens.add({targets:this.transition,value:1,duration:75,ease:'Sine.easeOut'});
     }
+    this.lastElapsed=elapsed;
     const blend=this.transition.value,pose={...targetPose};
-    if(this.fromPose&&blend<1)for(const field of ['torso','leg','knee','x','y'])pose[field]=this.fromPose[field]+(targetPose[field]-this.fromPose[field])*blend;
+    if(this.fromPose&&blend<1)for(const field of ['torso','head','leg','offleg','knee','offknee','x','y','rotation','alpha'])pose[field]=this.fromPose[field]+(targetPose[field]-this.fromPose[field])*blend;
     const rig=characterRig({action,dir,elapsed,twoHanded:item?.hands===2,width:w,height:h,from:this.fromRig,blend});
-    this.root.setPosition(x+pose.x,y+pose.y+Math.sin(clock/650)*.5).setScale(back?1:-1,aspect);this.body.setRotation(pose.torso);this.rearArms.setRotation(pose.torso);
-    this.bodyPiece(this.torso,ITEMS[save.equipment.armor]?.look===3?'torsoMage':'torso','armor',save,w,h,back);this.bodyPiece(this.head,'head','helm',save,w,h,back);this.head.setRotation(-pose.torso*.35);
+    this.root.setPosition(x+pose.x,y+pose.y+(action==='death'?0:Math.sin(clock/650)*.5)).setScale(back?1:-1,aspect);this.root.setAlpha(pose.alpha);const foot=h*.46;this.actor.setRotation(pose.rotation).setPosition(foot*Math.sin(pose.rotation),foot*(1-Math.cos(pose.rotation)));const hip=h*.08;for(const layer of [this.body,this.rearArms,this.rearEquipment])layer.setRotation(pose.torso).setPosition(hip*Math.sin(pose.torso),hip*(1-Math.cos(pose.torso)));
+    this.bodyPiece(this.torso,ITEMS[save.equipment.armor]?.look===3?'torsoMage':'torso','armor',save,w,h,back);this.bodyPiece(this.head,'head','helm',save,w,h,back);this.head.setOrigin(.5,.25).setPosition(0,-h*.25).setRotation(pose.head-pose.torso*.35);
     const robe=ITEMS[save.equipment.pants]?.look===3;this.skirt.setVisible(robe);if(robe)this.bodyPiece(this.skirt,'skirt','pants',save,w,h,back);
-    for(const leg of this.legs){const {side,hip,thigh,knee,shin}=leg;hip.setPosition(side*w*.105,h*.09).setRotation(side*pose.leg);knee.setPosition(side*w*.025,h*.17).setRotation(-side*pose.knee);this.bodyPiece(thigh,'thigh','pants',save,w,h,back,side);thigh.setPosition(-side*w*.105,-h*.09).setVisible(!robe);this.bodyPiece(shin,'shin','boots',save,w,h,back,side);shin.setPosition(-side*w*.13,-h*.26);}
+    for(const leg of this.legs){const {side,hip,thigh,knee,shin}=leg;hip.setPosition(side*w*.105,h*.09).setRotation(side===1?pose.leg:pose.offleg);knee.setPosition(side*w*.025,h*.17).setRotation(side===1?-pose.knee:-pose.offknee);this.bodyPiece(thigh,'thigh','pants',save,w,h,back,side);thigh.setPosition(-side*w*.105,-h*.09).setVisible(!robe);this.bodyPiece(shin,'shin','boots',save,w,h,back,side);shin.setPosition(-side*w*.13,-h*.26);}
     this.cloak.setVisible(back&&!!save.equipment.cloak);if(this.cloak.visible){this.gear(this.cloak,save.equipment.cloak,w*.45,h*.55);this.cloak.setOrigin(.5,.5).setPosition(0,h*.01);}
     this.neck.setVisible(!back&&!!save.equipment.neck);if(this.neck.visible){this.gear(this.neck,save.equipment.neck,w*.10,h*.10);this.neck.setOrigin(.5,.5).setPosition(0,-h*.21);}
     const look=ITEMS[save.equipment.armor]?.look||0;
     for(const arm of this.arms){
       const parent=back?this.rearArms:this.body;if(arm.shoulder.parentContainer!==parent){arm.shoulder.parentContainer.remove(arm.shoulder);parent.add(arm.shoulder);}
+      // Drawing order is independent of the wrist hierarchy; origin remains the grip.
+      const gearParent=back?this.rearEquipment:this.frontEquipment;if(arm.gear.parentContainer!==gearParent){arm.gear.parentContainer.remove(arm.gear);gearParent.add(arm.gear);}
       const solved=rig[arm.side],sh=rig.shoulders[arm.side];arm.shoulder.setPosition(sh.x,sh.y).setRotation(-solved.arm);arm.elbow.setPosition(0,rig.upper).setRotation(-solved.forearm);arm.wrist.setPosition(0,rig.lower);
       for(const [image,col,length]of [[arm.upper,0,rig.upper],[arm.fore,1,rig.lower]]){
         const rect=(back?rearArmRects:armRects)[look][col],key=addTexture(this.scene,`arm-${back?'back':'front'}-${look}-${col}`,this.sprites[back?'arms-back':'arms'],rect),ratio=length/(rect[3]*.80);
@@ -92,7 +96,7 @@ export class PhaserHero {
       arm.hand.setTexture(handKey).setOrigin(.52,.70).setDisplaySize(w*.10,h*.085).setFlipX(arm.side==='main');
       const id=save.equipment[arm.side==='main'?'weapon':'offhand'],gearItem=ITEMS[id];
       if(arm.side==='off'&&rig.twoHanded)arm.gear.setVisible(false);
-      else {this.gear(arm.gear,id,w*(gearItem?.hands===2?.55:.43),h*(arm.side==='main'?.52:.32));arm.gear.setRotation(arm.side==='main'?-.65:0);}
+      else {this.gear(arm.gear,id,w*(gearItem?.hands===2?.55:.43),h*(arm.side==='main'?.52:.32));arm.gear.setPosition(solved.hand.x,solved.hand.y).setRotation(arm.side==='main'?rig.weaponAngle:handAngle);}
     }
     this.rig=rig;this.pose=pose;
   }
@@ -100,10 +104,10 @@ export class PhaserHero {
 }
 
 export function createPhaserRenderer({canvas,background,sprites,tick,getState}){
-  let activeScene,hero,previewGame=null,enemyImages=[],enemyKey='';
+  let activeScene,hero,previewGame=null,enemyImages=[],enemyKey='',dangerAura;
   class CombatScene extends Phaser.Scene {
     constructor(){super('Combat');}
-    create(){activeScene=this;this.textures.addCanvas('background',background);this.backdrop=this.add.image(0,0,'background').setOrigin(0).setDisplaySize(480,800);const world=this.add.container(0,0).setScale(2);hero=new PhaserHero(this,sprites);world.add(hero.root);this.world=world;enemyImages=[this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false),this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false)];world.addAt(enemyImages[0],0);world.addAt(enemyImages[1],1);this.cameras.main.setBackgroundColor('#171522');}
+    create(){activeScene=this;this.textures.addCanvas('background',background);this.backdrop=this.add.image(0,0,'background').setOrigin(0).setDisplaySize(480,800);const world=this.add.container(0,0).setScale(2);hero=new PhaserHero(this,sprites);world.add(hero.root);this.world=world;dangerAura=this.add.graphics();world.addAt(dangerAura,0);enemyImages=[this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false),this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false)];world.addAt(enemyImages[0],1);world.addAt(enemyImages[1],2);this.cameras.main.setBackgroundColor('#171522');}
     update(now){if(!hero||!getState().loaded)return;tick(now);const state=getState();this.world.setVisible(state.phase!=='home');if(state.phase==='home')return;this.tweens.timeScale=state.paused?0:1;hero.sync(state.hero);}
   }
   const game=new Phaser.Game({type:Phaser.CANVAS,canvas,width:480,height:800,transparent:false,antialias:false,pixelArt:true,audio:{noAudio:true},scene:CombatScene,banner:false,render:{roundPixels:false},fps:{target:60}});
@@ -111,7 +115,8 @@ export function createPhaserRenderer({canvas,background,sprites,tick,getState}){
     game,
     syncEnemy(frame){
       if(!activeScene)return;
-      const {sheet,type,key,x,y,size,aspect,alpha=1,mirror=false,...rect}=frame;
+      const {sheet,type,key,x,y,size,aspect,alpha=1,mirror=false,danger=null,...rect}=frame;
+      dangerAura.clear();if(danger){const urgency=1-Math.min(1,Math.max(0,danger.remaining)/1300),pulse=danger.reducedMotion?.55:(1+Math.sin(danger.clock/(100-urgency*40)))/2;for(let ring=4;ring>=1;ring--)dangerAura.fillStyle(0xf52b43,.025+pulse*.015).fillEllipse(x,y+size*aspect*.12,size*(.62+ring*.1+pulse*.08),size*aspect*(.48+ring*.12+pulse*.08));dangerAura.lineStyle(1.5+pulse,0xff4057,.35+pulse*.45).strokeEllipse(x,y+size*aspect*.38,size*(.85+pulse*.12),size*aspect*.25);}
       const textureKey=addTexture(activeScene,`enemy-${type}-${key}`,sheet,[rect.sx,rect.sy,rect.sw,rect.sh]);
       if(key+type!==enemyKey){
         enemyKey=key+type;
@@ -130,6 +135,6 @@ export function createPhaserRenderer({canvas,background,sprites,tick,getState}){
       previewGame=new Phaser.Game({type:Phaser.CANVAS,canvas,width:240,height:400,transparent:true,antialias:false,pixelArt:true,audio:{noAudio:true},scene:PreviewScene,banner:false});
     },
     closePreview(){if(previewGame){previewGame.destroy(false);previewGame=null;}},
-    inspect(){return {scene:activeScene,hero,enemyImages,preview:previewGame};}
+    inspect(){return {scene:activeScene,hero,enemyImages,dangerAura,preview:previewGame};}
   };
 }

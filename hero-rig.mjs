@@ -19,10 +19,26 @@ export function characterRig({action='idle',dir='right',elapsed=0,twoHanded=fals
     else if(elapsed<110){const t=ease((elapsed-60)/50);hand=point(start,end,t);weaponAngle=lerp(windAngles[dir],angles[dir],t);}
     else if(elapsed<155){hand=end;weaponAngle=angles[dir];}
     else {const t=ease((elapsed-155)/145);hand=point(end,rest,t);weaponAngle=lerp(angles[dir],restAngle,t);}
-  }else if(action==='guard'){
-    hand={x:w*.23,y:-h*.08};offHand={x:-w*.10,y:-h*.07};weaponAngle=-.85;
-  }else if(action==='cast'&&elapsed<420){
-    const weight=Math.sin(Math.PI*ease(elapsed/420));hand=point(rest,{x:w*.22,y:-h*.38},weight);offHand=point(offRest,{x:-w*.22,y:-h*.32},weight);weaponAngle=lerp(restAngle,-1,weight);
+  }else if(['guard','block','ward'].includes(action)){
+    const recoil=action==='block'?Math.sin(Math.PI*Math.min(1,elapsed/360)):0;
+    hand={x:w*(.24-recoil*.045),y:-h*(.12+recoil*.035)};
+    offHand={x:-w*.19,y:-h*(.16+recoil*.045)};weaponAngle=-.95-recoil*.12;
+  }else if(action==='parry'&&elapsed<360){
+    const weight=Math.sin(Math.PI*ease(elapsed/360));hand=point(rest,{x:w*.28,y:-h*.28},weight);offHand=point(offRest,{x:-w*.21,y:-h*.12},weight);weaponAngle=lerp(restAngle,-1.45,weight);
+  }else if(action==='cast'&&elapsed<520){
+    const weight=Math.sin(Math.PI*ease(elapsed/520));hand=point(rest,{x:w*.22,y:-h*.38},weight);offHand=point(offRest,{x:-w*.26,y:-h*.32},weight);weaponAngle=lerp(restAngle,-.75,weight);
+  }else if(action==='dodge'&&elapsed<320){
+    const weight=Math.sin(Math.PI*ease(elapsed/320));hand=point(rest,{x:w*.22,y:-h*.14},weight);offHand=point(offRest,{x:-w*.21,y:-h*.15},weight);weaponAngle=lerp(restAngle,-1.25,weight);
+  }else if(action==='hurt'&&elapsed<360){
+    const weight=Math.sin(Math.PI*ease(elapsed/360));hand=point(rest,{x:w*.37,y:-h*.08},weight);offHand=point(offRest,{x:-w*.36,y:-h*.03},weight);weaponAngle=lerp(restAngle,.22,weight);
+  }else if(action==='stun'){
+    hand={x:w*.25,y:h*.10};offHand={x:-w*.25,y:h*.10};weaponAngle=.65+Math.sin(elapsed/190)*.04;
+  }else if(action==='death'){
+    const weight=ease(elapsed/300);hand=point(rest,{x:w*.25,y:h*.07},weight);offHand=point(offRest,{x:-w*.30,y:h*.07},weight);weaponAngle=lerp(restAngle,-.45,weight);
+  }else if(action==='heal'&&elapsed<700){
+    const weight=Math.sin(Math.PI*ease(elapsed/700));hand=point(rest,{x:w*.14,y:-h*.04},weight);offHand=point(offRest,{x:-w*.07,y:-h*.13},weight);weaponAngle=lerp(restAngle,-.4,weight);
+  }else if(action==='victory'&&elapsed<1100){
+    const weight=ease(elapsed/240)*(1-ease((elapsed-850)/250));hand=point(rest,{x:w*.20,y:-h*.44},weight);offHand=point(offRest,{x:-w*.28,y:-h*.26},weight);weaponAngle=lerp(restAngle,-.65,weight);
   }
   if(from&&blend<1){
     hand=point(from.main.hand,hand,blend);offHand=point(from.off.hand,offHand,blend);

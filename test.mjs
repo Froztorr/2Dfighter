@@ -101,9 +101,9 @@ test('gesture recognition handles squares started mid-edge and an open spiral',(
   assert.equal(core.recognize(spiral),'spiral');
   assert.equal(core.recognize([[0,0],[1,0],[1,1],[0,1],[0,0]]),null);
 });
-test('heavy attacks cannot be parried; sweeps demand a block; guard stops every attack type',()=>{
+test('heavy and sweep attacks reject both parry and dodge; guard stops every attack type',()=>{
   assert.equal(core.defend('up','down','slash',100,'heavy'),null);
-  assert.equal(core.defend('up','up','dodge',100,'heavy'),'perfect');
+  assert.equal(core.defend('up','up','dodge',100,'heavy'),null);
   assert.equal(core.defend('up','down','slash',100,'sweep'),null);
   assert.equal(core.defend('up','up','dodge',100,'sweep'),null);
   for(const kind of ['normal','heavy','sweep']){
@@ -174,12 +174,12 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
     const balance=run('save.gold');run('loop(last+16)');assert.equal(run('save.gold'),balance);
   }
   assert.equal(run('save.unlocked'),6);assert.ok(storage.has('emberblade-v1'));
-  run('enter(3);hp=1;attack={dir:"up",at:time};loop(last+16)');assert.equal(run('phase'),'dead');assert.equal(run('paused'),true);
+  run('enter(3);hp=1;attack={dir:"up",at:time};loop(last+16)');assert.equal(run('phase'),'dead');assert.equal(run('paused'),false);run('for(let i=0;i<30;i++)loop(last+50)');assert.equal(run('paused'),true);
   run('enter(3)');assert.equal(run('hp'),100);assert.equal(run('phase'),'combat');
   run('stamina=100;setBlocking(true);attack={dir:"up",kind:"heavy",at:time};loop(last+16)');
   assert.equal(run('hp'),100);assert.equal(run('stamina'),58);
   run('stamina=10;attack={dir:"up",kind:"heavy",at:time};loop(last+16)');
-  assert.ok(run('hp')<100);assert.equal(run('stamina'),0);assert.ok(run('playerStunned>time'));
+  assert.ok(run('hp')<100);assert.equal(run('stamina'),0);assert.ok(run('playerStunned>time'));assert.equal(run('currentHero().action'),'stun');
   const hurt=run('enemy.hp');run('slash("left");evade("left");setBlocking(true)');
   assert.equal(run('enemy.hp'),hurt);assert.equal(run('blocking'),false);
   run('time=playerStunned+1;setBlocking(true)');assert.equal(run('blocking'),true);
@@ -218,7 +218,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
     // Play the actual scheduler at 60 fps with starter gear, without injecting enemies or damage.
     run(`for(let frames=0;frames<18000&&!['won','dead'].includes(phase);frames++){
       loop(last+16);
-      if(attack&&attack.at-time<=130){if(attack.kind==='sweep')setBlocking(true);else if(attack.kind==='heavy')evade(attack.dir);else slash(DIR[attack.dir]);}
+      if(attack&&attack.at-time<=130){if(attack.kind!=='normal')setBlocking(true);else if(attack.kind==='heavy')evade(attack.dir);else slash(DIR[attack.dir]);}
       else if(!attack){setBlocking(false);if(enemy.openUntil>time)slash('left');}
     }`);
     assert.equal(run('phase'),'won',`starter equipment can finish floor ${f} using correctly timed defenses`);
@@ -246,7 +246,7 @@ test('rig transitions are continuous at contact and recovery; IK preserves both 
 
 test('character rig keeps two separated hands on one handle, fixed bones and bounded elbows',async()=>{
   const {characterRig}=await import('./hero-rig.mjs');
-  for(const twoHanded of [false,true])for(const action of ['idle','slash','guard','cast','hurt','dodge'])for(const dir of ['up','down','left','right'])for(let elapsed=0;elapsed<=420;elapsed+=5){
+  for(const twoHanded of [false,true])for(const action of Object.keys(core.HERO_ACTIONS))for(const dir of ['up','down','left','right'])for(let elapsed=0;elapsed<=1200;elapsed+=5){
     const rig=characterRig({action,dir,elapsed,twoHanded,width:112,height:149});
     for(const side of ['main','off']){
       const arm=rig[side],shoulder=rig.shoulders[side];
@@ -261,4 +261,14 @@ test('character rig keeps two separated hands on one handle, fixed bones and bou
       assert.ok(Math.abs(dx*Math.cos(shaft)+dy*Math.sin(shaft))<.01,'both grips must lie on the same shaft');
     }
   }
+});
+
+test('combat states have distinct silhouettes, recover on time and preserve terminal poses',()=>{
+  const actions=['block','parry','dodge','hurt','stun','death','cast','ward','heal','victory'];
+  const signatures=actions.map(action=>JSON.stringify(core.heroPose(action,'right',action==='death'?900:150)));
+  assert.equal(new Set(signatures).size,actions.length);
+  for(const action of ['parry','dodge','hurt','cast','ward','heal','victory'])assert.deepEqual(core.heroPose(action,'right',core.HERO_ACTIONS[action].duration),core.HERO_REST);
+  assert.deepEqual(core.heroPose('block','right',360),core.heroPose('guard','right',0));
+  assert.equal(core.heroPose('death','right',2000).rotation,1.35);
+  assert.ok(core.heroPose('stun','right',2000).y>0);
 });

@@ -103,28 +103,45 @@ export function equip(save,slot,id){
   return true;
 }
 export const DIR = { up: 'down', down: 'up', left: 'right', right: 'left' };
-export const HERO_REST={torso:0,arm:0,forearm:0,offarm:0,offforearm:0,wrist:-.65,leg:0,knee:0,x:0,y:0};
+export const HERO_ACTIONS={
+  idle:{duration:Infinity},slash:{duration:300},guard:{duration:Infinity},block:{duration:360},
+  parry:{duration:360},dodge:{duration:320},stun:{duration:Infinity},death:{duration:900},
+  hurt:{duration:360},cast:{duration:520},ward:{duration:400},heal:{duration:700},victory:{duration:1100},walk:{duration:Infinity}
+};
+export const HERO_REST={torso:0,head:0,arm:0,forearm:0,offarm:0,offforearm:0,wrist:-.65,leg:0,offleg:0,knee:0,offknee:0,x:0,y:0,rotation:0,alpha:1};
 const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
-export function blendPose(a,b,t){const w=smooth(t);return Object.fromEntries(Object.keys(HERO_REST).map(k=>[k,(a[k]||0)+((b[k]||0)-(a[k]||0))*w]));}
+export function blendPose(a,b,t){const w=smooth(t);return Object.fromEntries(Object.keys(HERO_REST).map(k=>[k,(a[k]??HERO_REST[k])+((b[k]??HERO_REST[k])-(a[k]??HERO_REST[k]))*w]));}
 export function heroPose(action,dir,elapsed){
-  if(action==='guard')return {...HERO_REST,torso:-.06,arm:-.35,forearm:-.65,offarm:.65,offforearm:-.8,leg:.08,knee:.12,y:2};
-  const duration=action==='slash'?300:action==='cast'?420:320;
-  if(elapsed<0||elapsed>=duration)return {...HERO_REST};
+  const rest={...HERO_REST},guard={...rest,torso:.07,head:-.04,arm:-.35,forearm:-.65,offarm:.65,offforearm:-.8,leg:.09,offleg:-.12,knee:.22,offknee:-.18,y:4};
+  if(elapsed<0)return rest;
+  if(action==='guard')return guard;
+  if(action==='stun')return {...rest,torso:.19+Math.sin(elapsed/130)*.035,head:.20,leg:.13,offleg:-.07,knee:.34,offknee:-.25,y:9,x:Math.sin(elapsed/150)*1.2};
+  if(action==='death'){
+    const kneel=smooth(elapsed/240),fall=smooth((elapsed-240)/580);
+    return {...rest,torso:.20*kneel,head:.25*kneel,leg:.25*kneel,offleg:-.14*kneel,knee:.60*kneel,offknee:-.42*kneel,y:5*kneel,x:8*fall,rotation:1.35*fall,alpha:1-.15*fall};
+  }
+  if(action==='walk'){const step=Math.sin(elapsed/95);return {...rest,leg:.18*step,offleg:-.18*step,knee:Math.max(0,step)*.23,offknee:-Math.max(0,-step)*.23,y:-Math.abs(step)*1.5,torso:step*.025};}
+  const duration=HERO_ACTIONS[action]?.duration??0;
+  if(elapsed>=duration)return action==='block'?guard:rest;
   const w=Math.sin(Math.PI*smooth(elapsed/duration));
-  if(action==='hurt')return {...HERO_REST,torso:-.18*w,x:-5*w,y:3*w,arm:.3*w,leg:-.12*w,knee:.15*w};
-  if(action==='dodge')return {...HERO_REST,torso:(dir==='left'?-.22:.22)*w,leg:.23*w,knee:.25*w,arm:-.4*w,y:4*w};
-  if(action==='cast')return {...HERO_REST,arm:-1.4*w,forearm:-.6*w,offarm:1.1*w,offforearm:-.5*w,torso:-.08*w,y:-3*w};
-  if(action!=='slash')return {...HERO_REST};
+  if(action==='block'){const impact=elapsed<65?smooth(elapsed/65):smooth((360-elapsed)/295);return blendPose(guard,{...guard,torso:-.16,head:.08,knee:.38,offknee:-.32,x:-5,y:7},impact);}
+  if(action==='parry')return {...rest,torso:-.12*w,head:-.04*w,leg:.14*w,offleg:-.09*w,knee:.16*w,x:3*w,y:-2*w};
+  if(action==='hurt')return {...rest,torso:-.24*w,head:.12*w,x:-7*w,y:3*w,arm:.3*w,leg:-.12*w,offleg:.08*w,knee:.21*w,offknee:-.12*w};
+  if(action==='dodge'){const sign=dir==='left'?-1:dir==='right'?1:0;return {...rest,torso:sign*.34*w,head:-sign*.10*w,leg:sign*.23*w,offleg:-sign*.18*w,knee:.48*w,offknee:-.35*w,x:sign*24*w,y:6*w+(dir==='up'?-18*w:dir==='down'?16*w:0)};}
+  if(action==='cast')return {...rest,arm:-1.4*w,forearm:-.6*w,offarm:1.1*w,offforearm:-.5*w,torso:-.10*w,head:-.08*w,y:-4*w,leg:-.05*w,offleg:.06*w};
+  if(action==='ward')return {...guard,torso:guard.torso-.11*w,y:guard.y+2*w};
+  if(action==='heal')return {...rest,torso:.07*w,head:.12*w,knee:.10*w,offknee:-.08*w,y:2*w};
+  if(action==='victory'){const raise=smooth(elapsed/240)*(1-smooth((elapsed-850)/250));return {...rest,torso:-.08*raise,head:-.06*raise,leg:.08*raise,offleg:-.08*raise,y:-2*raise};}
+  if(action!=='slash')return rest;
   const poses={right:[.9,-1.4,.12,-.19],left:[-1.4,1.15,-.12,.2],up:[.5,-2,.09,-.1],down:[-2,.35,-.1,.14]};
   const [a,b,c,d]=poses[dir]||poses.right;
-  const wind={...HERO_REST,arm:a,forearm:-.65,torso:c,leg:-.06,knee:.08,x:-2,y:1};
+  const wind={...rest,arm:a,forearm:-.65,torso:c,head:-c*.2,leg:-.06,offleg:.06,knee:.12,offknee:-.10,x:-2,y:2};
   const wrist=({right:.85,left:-2.25,up:-.65,down:2.5}[dir]??.85)-b+.25-d;
-  const contact={...HERO_REST,wrist,arm:b,forearm:-.25,offarm:-.22,offforearm:-.3,torso:d,leg:.16,knee:.12,x:7,y:dir==='up'?-3:2};
-  // Contact coincides with the existing 110ms gameplay hit; zero velocity at joins.
-  if(elapsed<60)return blendPose(HERO_REST,wind,elapsed/60);
+  const contact={...rest,wrist,arm:b,forearm:-.25,offarm:-.22,offforearm:-.3,torso:d,head:-d*.2,leg:.18,offleg:-.13,knee:.18,offknee:-.10,x:dir==='left'?-7:7,y:dir==='up'?-4:3};
+  if(elapsed<60)return blendPose(rest,wind,elapsed/60);
   if(elapsed<110)return blendPose(wind,contact,(elapsed-60)/50);
-  if(elapsed<155)return blendPose(contact,{...contact,arm:b*.9,x:8},(elapsed-110)/45);
-  return blendPose({...contact,arm:b*.9,x:8},HERO_REST,(elapsed-155)/145);
+  if(elapsed<155)return blendPose(contact,{...contact,arm:b*.9,x:contact.x*1.12},(elapsed-110)/45);
+  return blendPose({...contact,arm:b*.9,x:contact.x*1.12},rest,(elapsed-155)/145);
 }
 export function jointEnd(start,length,angle){return {x:start.x+Math.sin(angle)*length,y:start.y+Math.cos(angle)*length};}
 export function solveArm(shoulder,target,upper,lower,bend=1){
@@ -141,7 +158,7 @@ export function impactParticles(dir,count,random=Math.random){
 }
 export const ATTACKS = {
   normal: { label: 'PARRY · BLOCK · DODGE', cost: 24, color: '#ff535a' },
-  heavy: { label: 'BLOCK · DODGE', cost: 42, color: '#75d8ff' },
+  heavy: { label: 'BLOCK ONLY', cost: 42, color: '#ff4057' },
   sweep: { label: 'BLOCK ONLY', cost: 34, color: '#df2647' }
 };
 export function blockHit(stamina, kind = 'normal') {
@@ -153,7 +170,7 @@ export function regenStamina(stamina, seconds, blocking) {
 }
 export function defend(incoming, action, type, age, kind = 'normal') {
   if (!Number.isFinite(age) || age < 0 || age > 450) return null;
-  if (type === 'slash' && kind !== 'normal' || type === 'dodge' && kind === 'sweep') return null;
+  if (kind !== 'normal') return null;
   const correct = type === 'slash' ? DIR[incoming] === action : type === 'dodge' && incoming === action;
   if (!correct) return null;
   return age <= 170 ? 'perfect' : 'normal';
