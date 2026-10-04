@@ -43,3 +43,11 @@ Generation brief: richly shaded dark fantasy 16-bit pixel sprites, organic silho
 `hall.png`: original built-in ImageGen portrait painting, used as the main-menu background and dimmed character-folio backdrop. Prompt: detailed 16-bit dark-fantasy ruined fortress under a pale moon, stone arch, bronze ornament, midnight teal/charcoal/antique gold, empty foreground terrace, no text or UI. Opaque scenery, not a sprite atlas.
 
 Combat uses the rear hero atlas as jointed head/torso/upper-arm/forearm/leg layers. Each layer selects the equipped clothing column and tint; held gear follows the forearm. Windup/contact/recovery lasts 280 ms with damage at 110 ms and a 300 ms input cadence. Parry remains immediate. Impact particles follow the strike direction; player damage triggers recoil, hitstop and an edge vignette. Reduced-motion preference disables camera shake.
+
+## Continuous character rig
+
+Combat and equipment previews now use the same articulated hero renderer. Anatomical polygon masks isolate the existing hero art into head, torso/hips, upper arms, forearms/hands, thighs and lower legs. Pieces retain their original scale and rotate about shoulder, elbow, hip and knee pivots. Mage skirts remain an intact panel rather than being split into two legs. No generated PNGs were modified.
+
+Held equipment uses measured per-item grip coordinates, drawn behind the fingers. Two-handed poses solve both fixed-length arm chains and constrain the common grip to their shared reachable area. Slash keyframes contact at the existing 110 ms damage time; smooth interpolation handles anticipation, follow-through, recovery and interrupted actions.
+
+The standalone `guards.png` artwork is preserved as a source asset but is no longer rendered in combat: its character proportions differ from the main enemy sheets. Guard, attack, hit and death use each enemy's own atlas at one scale and ground anchor, with an 85 ms transition between poses. Idle breathing moves the same frame instead of switching between inconsistently painted silhouettes.
