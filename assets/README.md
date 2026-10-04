@@ -44,10 +44,16 @@ Generation brief: richly shaded dark fantasy 16-bit pixel sprites, organic silho
 
 Combat uses the rear hero atlas as jointed head/torso/upper-arm/forearm/leg layers. Each layer selects the equipped clothing column and tint; held gear follows the forearm. Windup/contact/recovery lasts 280 ms with damage at 110 ms and a 300 ms input cadence. Parry remains immediate. Impact particles follow the strike direction; player damage triggers recoil, hitstop and an edge vignette. Reduced-motion preference disables camera shake.
 
-## Continuous character rig
+## Phaser arm rig (supersedes the strip-based prototype)
 
-Combat and equipment previews now use the same articulated hero renderer. Anatomical polygon masks isolate the existing hero art into head, torso/hips, upper arms, forearms/hands, thighs and lower legs. Pieces retain their original scale and rotate about shoulder, elbow, hip and knee pivots. Mage skirts remain an intact panel rather than being split into two legs. No generated PNGs were modified.
+`arms.png` (front) and `arms-back.png` (rear) are new original transparent ImageGen atlases, each 1086 × 1448. Three columns: complete upper arm / forearm without fingers / closed gripping hand. Four rows: plain gray linen, steel plate, forest leather, violet mage cloth. Segments have rounded, fully painted ends designed to overlap at joints. The original generated PNG is preserved unchanged. Measured source rectangles in `phaser-renderer.mjs` avoid gutters and neighboring parts.
 
-Held equipment uses measured per-item grip coordinates, drawn behind the fingers. Two-handed poses solve both fixed-length arm chains and constrain the common grip to their shared reachable area. Slash keyframes contact at the existing 110 ms damage time; smooth interpolation handles anticipation, follow-through, recovery and interrupted actions.
+Generation brief: isolated vertical anatomical segments matching `hero.png`, rich pixel shading, no torso/neck pixels, no weapon, rounded ends rather than diagonal shoulder cuts, separate closed fists.
 
-The standalone `guards.png` artwork is preserved as a source asset but is no longer rendered in combat: its character proportions differ from the main enemy sheets. Guard, attack, hit and death use each enemy's own atlas at one scale and ground anchor, with an 85 ms transition between poses. Idle breathing moves the same frame instead of switching between inconsistently painted silhouettes.
+Combat always uses the rear hero row and rear arm atlas. Arms reaching forward toward the enemy belong to a separate rear limb container: the back of the torso, head and legs occlude them, instead of painting forearms and palms across the back. The front inventory view is mirrored to keep the same anatomical dominant hand. Browser checks explicitly assert the rear source textures and container order.
+
+The hero is now a native Phaser Container hierarchy with shoulder → elbow → wrist containers and Image children. The earlier polygon strips for moving arms were removed: they contained torso pixels that became pointed shoulders when rotated. Body/head/leg masks still select stationary or mildly rotated regions of the original hero sheet. Mage skirts stay intact.
+
+A shared rig solver defines two separated grips on one handle, projects them into the reachable region of both fixed-length arms, and prevents fully folded elbows. Phaser tweens action transitions, with contact at the existing 110 ms gameplay hit. The equipment preview uses the same native renderer and defaults to a relaxed two-handed hold, with the staff angled away from the face.
+
+The standalone `guards.png` is retained as a source asset but no longer rendered in combat. Enemy guard/attack/hurt/death use each enemy's own atlas; native Phaser Images and 85 ms tweens transition between frames.

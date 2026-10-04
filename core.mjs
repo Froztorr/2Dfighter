@@ -132,7 +132,7 @@ export function solveArm(shoulder,target,upper,lower,bend=1){
   const distance=Math.max(Math.abs(upper-lower)+.001,Math.min(upper+lower-.001,Math.hypot(dx,dy)));
   const heading=Math.atan2(dx,dy),offset=Math.acos(Math.max(-1,Math.min(1,(upper*upper+distance*distance-lower*lower)/(2*upper*distance))));
   const arm=heading+bend*offset,elbow=jointEnd(shoulder,upper,arm);
-  const reachable=jointEnd(shoulder,distance,heading),forearm=Math.atan2(reachable.x-elbow.x,reachable.y-elbow.y)-arm;
+  const reachable=jointEnd(shoulder,distance,heading),relative=Math.atan2(reachable.x-elbow.x,reachable.y-elbow.y)-arm,forearm=Math.atan2(Math.sin(relative),Math.cos(relative));
   return {arm,forearm,elbow,hand:jointEnd(elbow,lower,arm+forearm)};
 }
 export function impactParticles(dir,count,random=Math.random){

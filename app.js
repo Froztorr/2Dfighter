@@ -1,8 +1,10 @@
-import { HERO_REST, blendPose, solveArm, heroPose, impactParticles, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
+import { createPhaserRenderer } from './phaser-renderer.mjs';
+import { impactParticles, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
 const $ = id => document.getElementById(id);
-const canvas = $('scene'), ctx = canvas.getContext('2d');
+const canvas = $('scene'), background=document.createElement('canvas'), ctx = background.getContext('2d');
+background.width=480;background.height=800;
 canvas.width = 480; canvas.height = 800;
-const sprites = Object.fromEntries(['brute','lizard','wraith','knight','gear','hero','guards','frost','spider','demon','relics'].map(name => [name, new Image()]));
+const sprites = Object.fromEntries(['arms','arms-back','brute','lizard','wraith','knight','gear','hero','guards','frost','spider','demon','relics'].map(name => [name, new Image()]));
 let spritesLoaded = 0;
 for (const [name, image] of Object.entries(sprites)) {
   image.onload = () => { spritesLoaded++; if (spritesLoaded===Object.keys(sprites).length) { $('start').disabled=false; $('assetStatus').textContent='';renderHome(); } };
@@ -37,8 +39,7 @@ const atlasCuts = {
 };
 function persist() { try { localStorage.setItem('emberblade-v1', JSON.stringify(save)); } catch { say('Storage unavailable — progress lasts this session'); } }
 function say(text) { $('message').textContent = text; }
-let heroBlend={from:{...HERO_REST},at:0},heroVisual={...HERO_REST},heroMode='idle';
-function animateHero(type,dir='right'){heroBlend={from:{...heroVisual},at:time};heroAction={type,dir,at:time};}
+function animateHero(type,dir='right'){heroAction={type,dir,at:time};}
 function impact(x,y,dir,kind='blood',power=1){
   const colors=kind==='blood'?['#8c1232','#cd2940','#f26760']:kind==='magic'?['#eee5ff','#b89afa','#785dca']:['#fff7c0','#e6b36c','#9ae5ec'];
   for(const p of impactParticles(dir,Math.round(15*power)))particles.push({...p,x,y,at:time,color:colors[Math.floor(Math.random()*colors.length)]});
@@ -209,7 +210,7 @@ function renderPanel() {
   $('panelBody').innerHTML = summary+(tab==='gear' ? gear + `<p>EXP ${save.xp} / ${save.level*100}</p><div class="upgrade">Vigor +12 HP / Edge +2 ATK</div>` + upgrades + '<button class="returnHall" data-home="map">แผนที่การเดินทาง →</button>' : `<div class="inventory">${Object.entries(ITEMS).map(([id,item])=>`<button class="inventoryItem" data-buy="${id}" ${save.owned.includes(id)||save.gold<item.cost?'disabled':''}>${itemIcon(id)}<b>${item.name}</b><small>${itemStats(item)}</small><span>${save.owned.includes(id)?'OWNED':'◈ '+item.cost}</span></button>`).join('')}</div><button class="primary" data-potion-buy ${save.gold<40||save.potions>=99?'disabled':''}>HEALING POTION · 40 GOLD</button>`);
   if(tab==='quests')$('panelBody').innerHTML=questPanel();
   if(tab==='camp')$('panelBody').innerHTML=campPanel();
-  if(tab==='gear'){const preview=$('heroPreview');drawHero(preview.getContext('2d'),120,200,240,false);}
+  if(tab==='gear')renderer.preview($('heroPreview'),save);else renderer.closePreview();
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); hud();
 }
 function renderHome(){
@@ -269,91 +270,6 @@ function gearSprite(context,id,x,y,w,h=w,angle=0){
   const cols=item.atlas?4:6,rows=item.atlas?3:6,cell=sheet.naturalWidth/cols;
   context.save();context.translate(x,y);context.rotate(angle);context.drawImage(sheet,item.icon%cols*cell,Math.floor(item.icon/cols)*sheet.naturalHeight/rows,cell,sheet.naturalHeight/rows,-w/2,-h/2,w,h);context.restore();
 }
-function drawHero(context,x,y,size,back){
-  const sheet=sprites.hero;if(!sheet.complete||!sheet.naturalWidth)return;
-  drawHeroRig(context,x,y,size,sheet.naturalWidth/4,sheet.naturalHeight/2,back);
-}
-// Grip coordinates are measured within inventory cells, rather than their centers.
-const gearGrips={
-  'rust-sword':[.28,.76], 'iron-sword':[.30,.77], mace:[.27,.79], axe:[.30,.77],
-  greatsword:[.25,.78], 'ember-staff':[.24,.79], 'parry-dagger':[.30,.77],
-  'venom-dagger':[.31,.77], 'fire-wand':[.27,.78], 'ice-staff':[.25,.78],
-  'frost-sword':[.24,.80], 'spider-fang':[.26,.80], 'spider-claw':[.70,.76], 'assassin-dagger':[.66,.35], 'inferno-axe':[.25,.81], 'demon-staff':[.20,.82]
-};
-function heldGear(c,id,x,y,w,h,angle){
-  const item=ITEMS[id];if(!item)return;
-  const grip=item.shield?[.5,.5]:(gearGrips[id]||[.28,.78]);
-  c.save();c.translate(x,y);c.rotate(angle);
-  gearSprite(c,id,(.5-grip[0])*w,(.5-grip[1])*h,w,h);c.restore();
-}
-function drawHeroRig(c,x,y,w,cw,ch,back=true){
-  const h=w*ch/cw,mode=blocking?'guard':heroAction.type;
-  if(back&&mode!==heroMode){heroBlend={from:{...heroVisual},at:time};heroMode=mode;}
-  const p=back?blendPose(heroBlend.from,heroPose(mode,heroAction.dir,time-heroAction.at),(time-heroBlend.at)/65):{...HERO_REST};
-  if(back)heroVisual=p;
-  // Every piece uses the same source proportions. Rotation only; no stretched limbs.
-  const piece=(slot,points)=>{
-    const item=ITEMS[save.equipment[slot]];c.save();c.beginPath();
-    points.forEach(([px,py],i)=>i?c.lineTo((px-.5)*w,(py-.5)*h):c.moveTo((px-.5)*w,(py-.5)*h));c.closePath();c.clip();
-    c.filter=item?.hue?`hue-rotate(${item.hue}deg)`:'none';
-    c.drawImage(sprites.hero,(item?.look||0)*cw,back?ch:0,cw,ch,-w/2,-h/2,w,h);c.restore();
-  };
-  const pivot=(px,py,angle,fn)=>{c.save();c.translate((px-.5)*w,(py-.5)*h);c.rotate(angle);c.translate(-((px-.5)*w),-((py-.5)*h));fn();c.restore();};
-  const mirror=(points,side)=>points.map(([px,py])=>[side===1?1-px:px,py]);
-  const main=ITEMS[save.equipment.weapon],robe=ITEMS[save.equipment.pants]?.look===3;
-  c.save();c.translate(x+p.x,y+p.y+Math.sin(time/650)*.55);c.imageSmoothingEnabled=false;
-  for(const side of [-1,1]){
-    const hip=.5+side*.105;
-    pivot(hip,.59,side*p.leg,()=>{
-      if(!robe)piece('pants',mirror([[.29,.56],[.49,.56],[.48,.78],[.31,.79]],side));
-      pivot(.5+side*.13,.76,-side*p.knee,()=>piece('boots',mirror([[.30,.75],[.48,.75],[.48,1],[.23,1]],side)));
-    });
-  }
-  pivot(.5,.57,p.torso,()=>{
-    if(robe)piece('pants',[[.25,.55],[.75,.55],[.82,.91],[.18,.91]]);
-    piece('armor',[[.36,.24],[.64,.24],[.66,.49],[.73,.61],[.27,.61],[.34,.49]]);
-    pivot(.5,.25,-p.torso*.35,()=>piece('helm',[[.12,0],[.88,0],[.88,.25],[.60,.28],[.40,.28],[.12,.25]]));
-    if(back&&save.equipment.cloak)gearSprite(c,save.equipment.cloak,0,h*.015,w*.43,h*.55,Math.sin(time/550)*.025);
-    gearSprite(c,save.equipment.neck,0,-h*.22,w*.12);
-    const upper=Math.hypot(w*.06,h*.14),lower=Math.hypot(w*.05,h*.105);
-    const base=Math.atan2(w*.06,h*.14),lowerBase=Math.atan2(w*.05,h*.105);
-    const mainAngle=base-p.arm,mainElbow={x:w*.19+Math.sin(mainAngle)*upper,y:-h*.20+Math.cos(mainAngle)*upper};
-    const wristAngle=lowerBase-p.arm-p.forearm;
-    let mainHand={x:mainElbow.x+Math.sin(wristAngle)*lower,y:mainElbow.y+Math.cos(wristAngle)*lower};
-    let support=null,mainArm=p.arm,mainFore=p.forearm,gripAngle=p.wrist;
-    if(main?.hands===2){
-      const angle=p.arm+p.forearm+p.wrist;
-      const offset={x:-Math.sin(angle)*h*.035,y:Math.cos(angle)*h*.035};
-      const right={x:w*.19,y:-h*.20},left={x:-w*.19,y:-h*.20},reach=upper+lower-.5;
-      // Project the common grip into BOTH reach circles. Neither arm may stretch.
-      for(let i=0;i<12;i++)for(const [shoulder,shift] of [[left,offset],[right,{x:0,y:0}]]){
-        const dx=mainHand.x+shift.x-shoulder.x,dy=mainHand.y+shift.y-shoulder.y,distance=Math.hypot(dx,dy);
-        if(distance>reach)mainHand={x:shoulder.x+dx*reach/distance-shift.x,y:shoulder.y+dy*reach/distance-shift.y};
-      }
-      const primary=solveArm(right,mainHand,upper,lower,1);
-      mainArm=base-primary.arm;mainFore=lowerBase-base-primary.forearm;
-      gripAngle=angle-mainArm-mainFore;
-      support=solveArm(left,{x:mainHand.x+offset.x,y:mainHand.y+offset.y},upper,lower,-1);
-    }
-    // Offhand behind the sword arm; both hands use the same rigid chain as the gear.
-    for(const side of [-1,1]){
-      const arm=side===1?mainArm:support?-base-support.arm:p.offarm;
-      const fore=side===1?mainFore:support?base-lowerBase-support.forearm:p.offforearm;
-      pivot(.5+side*.19,.30,arm,()=>{
-        piece('armor',mirror([[.29,.25],[.39,.285],[.33,.45],[.235,.455],[.235,.37]],side));
-        pivot(.5+side*.25,.44,fore,()=>{
-          piece('armor',mirror([[.235,.415],[.335,.435],[.285,.56],[.17,.575],[.18,.515]],side));
-          const hx=side*w*.30,hy=h*.045;
-          const id=save.equipment[side===1?'weapon':'offhand'],item=ITEMS[id];
-          if(side===1||main?.hands!==2)heldGear(c,id,hx,hy,w*(item?.hands===2?.59:.43),h*(side===1?.52:.32),side===1?gripAngle:0);
-          // The hand covers the grip, so the hilt cannot float in front of the fingers.
-          piece('armor',mirror(ITEMS[save.equipment.armor]?.look===3?[[.14,.52],[.23,.52],[.23,.59],[.145,.59]]:[[.18,.52],[.28,.53],[.265,.60],[.145,.60]],side));
-          gearSprite(c,save.equipment[side===1?'ring1':'ring2'],hx,hy,w*.045);
-        });
-      });
-    }
-  });c.restore();
-}
 function enemyPosition() {
   const impact = enemy?.strikeUntil>time ? Math.sin((enemy.strikeUntil-time)/180*Math.PI)*8 : 0;
   const recoil=enemy?.hit>time?Math.sin((enemy.hit-time)/260*Math.PI)*9:0;
@@ -381,22 +297,7 @@ function drawEnemy() {
   const cuts=atlasCuts[enemy?.type || 'brute']||{x:[0,cellW,cellW*2,cellW*3,cellW*4],y:Array(4).fill(Array.from({length:7},(_,i)=>cellH*i))};
   const sx=cuts.x[column],sy=cuts.y[column][row],sw=cuts.x[column+1]-sx,sh=cuts.y[column][row+1]-sy;
   const scale=size/cellW;
-  const frame={sx,sy,sw,sh,column,row,mirror:enemy?.type==='demon'&&row===3};
-  const key=`${row}:${column}`;
-  if(enemy && enemy.frameKey!==key){enemy.previousFrame=enemy.currentFrame;enemy.frameAt=time;enemy.frameKey=key;enemy.currentFrame=frame;}
-  const blend=Math.max(0,Math.min(1,(time-(enemy?.frameAt??time))/85));
-  const paint=(f,alpha)=>{
-    ctx.save();ctx.globalAlpha=alpha*(phase==='walking'?Math.max(0,Math.min(1,(transition-time)/500)):1);
-    if(f.mirror){ctx.translate(x*2,0);ctx.scale(-1,1);}
-    // Cell-based feet stay anchored; breathing and guard shifts move the whole body.
-    const breathe=Math.sin(time/650)*.6;
-    const guardLean=guarding?-.035:0;
-    ctx.translate(x,y+size*aspect*.43);ctx.rotate(guardLean);
-    ctx.drawImage(sheet,f.sx,f.sy,f.sw,f.sh,-size/2+(f.sx-f.column*cellW)*scale,-size*aspect*.93+(f.sy-f.row*cellH)*scale*aspect+breathe,f.sw*scale,f.sh*scale*aspect);
-    ctx.restore();
-  };
-  if(enemy?.previousFrame&&blend<1)paint(enemy.previousFrame,1-blend);
-  paint(frame,enemy?.previousFrame?blend:1);
+  renderer.syncEnemy({sheet,type:enemy?.type||'brute',key:`${row}:${column}`,sx,sy,sw,sh,column,row,cellH,x,y,size,aspect,mirror:enemy?.type==='demon'&&row===3,alpha:phase==='walking'?Math.max(0,Math.min(1,(transition-time)/500)):1});
 
 }
 function resolveAttack() {
@@ -434,7 +335,7 @@ function draw(){
   drawEnemy();
   let dx=0,dy=0;if(dodge&&dodge.until>time){const v=Math.sin((dodge.until-time)/260*Math.PI)*19;dx=dodge.dir==='left'?-v:dodge.dir==='right'?v:0;dy=dodge.dir==='up'?-v:dodge.dir==='down'?v:0;}
   const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
-  ctx.save();ctx.translate(60+dx,308+dy);ctx.scale(1,aspect);drawHero(ctx,0,0,112,true);ctx.restore();
+
   if(playerStunned>time){ctx.fillStyle='#ffd293';ctx.font='bold 10px monospace';ctx.fillText('GUARD BROKEN',12,252);}
   cuts=cuts.filter(c=>time-c.at<190);for(const cut of cuts){ctx.save();ctx.translate(cut.x,cut.y);ctx.rotate({up:-Math.PI/2,down:Math.PI/2,left:Math.PI,right:0}[cut.dir]);ctx.globalAlpha=1-(time-cut.at)/190;poly([[-48,8],[-15,-7],[43,0],[4,3]],'#fff3c2');ctx.restore();}
   particles=particles.filter(p=>time-p.at<p.life);for(const p of particles){const age=(time-p.at)/1000;ctx.globalAlpha=1-(time-p.at)/p.life;rect(p.x+p.vx*age,p.y+p.vy*age+75*age*age,p.size,p.size,p.color);}ctx.globalAlpha=1;
@@ -455,5 +356,10 @@ function loop(now){let dt=Math.min(50,now-last);last=now;updateMini(now);if(now>
     if(attack&&time>=attack.at)resolveAttack();
     if(phase==='combat'&&!attack&&time>=nextAttack&&time>=stunned){const pattern=enemy.type==='frost'?['normal','heavy','normal','sweep']:enemy.type==='spider'?['normal','normal','heavy','normal']:enemy.type==='demon'?['heavy','normal','sweep','normal']:['normal','normal','heavy','normal','sweep'];const kind=pattern[attackCount++%pattern.length],duration=kind==='normal'?Math.max(650,1050-floor*70):1300;attack={dir:Object.keys(DIR)[Math.floor(Math.random()*4)],kind,started:time,at:time+duration};enemy.dir=attack.dir;}
   }
-}hud();draw();requestAnimationFrame(loop);}
-renderHome();hud();requestAnimationFrame(loop);
+}hud();draw();}
+const renderer=createPhaserRenderer({canvas,background,sprites,tick:loop,getState:()=>{
+  let dx=0,dy=0;if(dodge&&dodge.until>time){const v=Math.sin((dodge.until-time)/260*Math.PI)*19;dx=dodge.dir==='left'?-v:dodge.dir==='right'?v:0;dy=dodge.dir==='up'?-v:dodge.dir==='down'?v:0;}
+  const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
+  return {phase,paused,loaded:spritesLoaded===Object.keys(sprites).length,hero:{save,x:60+dx,y:308+dy,width:112,back:true,action:blocking?'guard':heroAction.type,dir:heroAction.dir,elapsed:time-heroAction.at,clock:time,aspect}};
+}});
+renderHome();hud();

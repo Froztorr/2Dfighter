@@ -127,8 +127,8 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   const imageCalls=[];
   const drawing=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
   const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{setProperty(){}},dataset:{},hidden:true,setAttribute(){},classList:{toggle(){}},addEventListener(type,fn){events.set(id+':'+type,fn);},getContext:()=>drawing,querySelector:()=>node('heading'),getBoundingClientRect:()=>({left:0,top:0,width:240,height:400}),setPointerCapture(){}});return nodes.get(id);};
-  const context=vm.createContext({...core,Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){if(/\/(frost|spider|demon)\.png$/.test(path)){this.naturalWidth=1024;this.naturalHeight=1536;}}},document:{getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
-  const source=(await readFile(new URL('./app.js',import.meta.url),'utf8')).replace(/^import[^\n]+\n/,'');
+  const context=vm.createContext({...core,createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){if(/\/(frost|spider|demon)\.png$/.test(path)){this.naturalWidth=1024;this.naturalHeight=1536;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
+  const source=(await readFile(new URL('./app.js',import.meta.url),'utf8')).replace(/^import[^\n]+\n/gm,'');
   vm.runInContext(source,context);
   const run=s=>vm.runInContext(s,context);
   assert.equal(run('phase'),'home');run('loop(500)');assert.equal(run('enemy'),undefined);
@@ -241,5 +241,24 @@ test('rig transitions are continuous at contact and recovery; IK preserves both 
     assert.ok(Math.abs(Math.hypot(rig.hand.x-rig.elbow.x,rig.hand.y-rig.elbow.y)-10)<1e-8);
     assert.ok(Object.values(rig.hand).every(Number.isFinite));
     if(Math.hypot(target.x-shoulder.x,target.y-shoulder.y)>2&&Math.hypot(target.x-shoulder.x,target.y-shoulder.y)<22)assert.ok(Math.hypot(rig.hand.x-target.x,rig.hand.y-target.y)<1e-8);
+  }
+});
+
+test('character rig keeps two separated hands on one handle, fixed bones and bounded elbows',async()=>{
+  const {characterRig}=await import('./hero-rig.mjs');
+  for(const twoHanded of [false,true])for(const action of ['idle','slash','guard','cast','hurt','dodge'])for(const dir of ['up','down','left','right'])for(let elapsed=0;elapsed<=420;elapsed+=5){
+    const rig=characterRig({action,dir,elapsed,twoHanded,width:112,height:149});
+    for(const side of ['main','off']){
+      const arm=rig[side],shoulder=rig.shoulders[side];
+      assert.ok(Math.abs(Math.hypot(arm.elbow.x-shoulder.x,arm.elbow.y-shoulder.y)-rig.upper)<1e-7);
+      assert.ok(Math.abs(Math.hypot(arm.hand.x-arm.elbow.x,arm.hand.y-arm.elbow.y)-rig.lower)<1e-7);
+      assert.ok(Math.abs(arm.forearm)<2.45,'elbow must not fold completely backwards');
+    }
+    if(twoHanded){
+      const dx=rig.off.hand.x-rig.main.hand.x,dy=rig.off.hand.y-rig.main.hand.y;
+      assert.ok(Math.abs(Math.hypot(dx,dy)-149*.075)<.01,'hands must stay separated');
+      const shaft=rig.weaponAngle+.65;
+      assert.ok(Math.abs(dx*Math.cos(shaft)+dy*Math.sin(shaft))<.01,'both grips must lie on the same shaft');
+    }
   }
 });

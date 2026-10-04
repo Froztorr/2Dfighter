@@ -1,6 +1,6 @@
 # Emberblade — 2Dfighter
 
-ตัวอย่าง mobile portrait RPG แบบ pixel art วาดด้วย Canvas ไม่มี runtime dependency
+เกม mobile portrait RPG แบบ pixel art ใช้ Phaser 3.90 สำหรับ game loop, Scene, sprite, Container และ tween ของอนิเมชั่น ตัว Phaser อยู่ใน vendor/ จึงไม่ต้องโหลด runtime จาก CDN
 
 ## เล่นบนคอมพิวเตอร์
 
@@ -8,7 +8,7 @@
 
 ## เล่นบนมือถือ
 
-รัน `npm start -- --lan` แล้วเปิด `http://<IP ของคอมใน Wi-Fi>:4173` บนมือถือในเครือข่ายเดียวกัน (เครื่องต้องอนุญาต inbound port 4173) หยุด server ด้วย Ctrl+C สามารถนำ index.html, style.css, app.js, core.mjs และโฟลเดอร์ assets ไปวางบน static hosting ได้โดยตรง
+รัน `npm start -- --lan` แล้วเปิด `http://<IP ของคอมใน Wi-Fi>:4173` บนมือถือในเครือข่ายเดียวกัน (เครื่องต้องอนุญาต inbound port 4173) หยุด server ด้วย Ctrl+C สามารถนำ index.html, style.css, app.js, core.mjs, hero-rig.mjs, phaser-renderer.mjs และโฟลเดอร์ assets กับ vendor ไปวางบน static hosting ได้โดยตรง
 
 ## Main menu and combat feel
 
@@ -35,9 +35,19 @@
 - Forge ซื้อของ, Vigor/Edge เพิ่ม stat, replay ด่านที่ปลดล็อกได้; เซฟเก่าจะย้ายแหวนเดิมไปช่องแรกโดยรักษาอุปกรณ์และทองเดิม
 - บันทึกทอง/อุปกรณ์/upgrade/ด่านที่ปลดล็อกใน localStorage (`emberblade-v1`) ไม่บันทึก combat กลางห้อง เปิดเมนูหรือสลับแท็บจะ pause
 
+## Phaser character animation
+
+ฉากต่อสู้แสดงผู้เล่นจากด้านหลัง หันหน้าเข้าหาศัตรูเสมอ ใช้ภาพแขน/มือด้านหลังใน `assets/arms-back.png` และให้ลำตัวบังแขนที่ยื่นไปด้านหน้าหาศัตรู ไม่วาดแขนพาดทับแผ่นหลัง หน้าสวมอุปกรณ์ใช้ภาพด้านหน้าและสลับด้านตามกายวิภาคเพื่อให้อาวุธอยู่ในมือข้างเดียวกัน
+
+ตัวละครใช้ Phaser Container เป็นลำดับไหล่ → ข้อศอก → ข้อมือ พร้อมภาพแขน/กำมือที่สร้างแยกใหม่ใน `assets/arms.png` ไม่ตัดชิ้นไหล่จากภาพเต็มตัวมาหมุน ส่วนหัว ลำตัว และขาใช้ภาพเดิมเพื่อรักษารูปลักษณ์ชุด อาวุธยึดกับข้อมือและวาดใต้กำมือ อาวุธสองมือวางจุดจับห่างกันตามแนวด้ามและแก้ IK ของทั้งสองแขนร่วมกัน โดยคงความยาวกระดูกและจำกัดการพับข้อศอก
+
+Phaser คุม frame loop และ tween เมื่อเปลี่ยน action/ทิศ รวมถึง sprite ของศัตรูและการเกลี่ยเฟรมโจมตี หน้าสวมอุปกรณ์ใช้ Phaser Scene อีกตัวและ renderer ตัวเดียวกับฉากต่อสู้ พื้นหลังและเอฟเฟกต์เดิมเป็น CanvasTexture ใน Scene
+
 ## Verification
 
 `npm test` ตรวจทิศและจังหวะป้องกัน, gestures, เงิน/อุปกรณ์, save ที่เสียหาย และ game loop จริงผ่านทั้ง 6 ด่าน รวม stun, spell cooldown, ward, pause และ retry หลังตาย มี simulation 60 fps ใช้อุปกรณ์เริ่มต้นและอินพุตป้องกันตามเวลาของ scheduler จริงจนจบทุกด่าน รวมตรวจ daily rollover และการรับรางวัลซ้ำ
+
+`npm ci && npm run test:browser` ตรวจใน Chromium จริง (กำหนด `CHROMIUM_PATH` ได้; default `/usr/bin/chromium`) ตรวจว่าใช้ Phaser ทั้งสองหน้าจอ จุดข้อมือของ native sprite ตรงกับ IK ภาพด้านหลัง 30 ท่า / 60 แขน พร้อมตรวจ rear atlas และการบังของลำตัว และการโจมตีศัตรู 28 แบบ เก็บภาพตรวจไว้ใน `artifacts/` รวมกรณี Crown of Winter + Ember Staff + Trail Boots จากภาพรายงานปัญหา
 
 ## Campaign expansion / daily / camp
 
