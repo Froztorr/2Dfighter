@@ -192,9 +192,10 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   events.get('blockBtn:pointercancel')({pointerId:1});assert.equal(run('blocking'),false);
   run('equip(save,"weapon","ember-staff");enter(1);setBlocking(true)');assert.equal(run('blocking'),false);
   run('equip(save,"weapon","rust-sword");equip(save,"offhand","wood-shield");enter(1);draw()');
-  assert.ok(imageCalls.some(frame=>frame[0]===run('sprites.guards')),'guard stance must render');
+  assert.ok(imageCalls.some(frame=>frame[0]===run('sprites.brute')),'guard must retain the combat character atlas');
+  assert.ok(!imageCalls.some(frame=>frame[0]===run('sprites.guards')),'guard must not replace the enemy anatomy');
   imageCalls.length=0;run('hit(10);draw()');
-  assert.ok(imageCalls.some(frame=>frame[0]===run('sprites.guards')&&frame[2]>0),'guard impact must render');
+  assert.ok(imageCalls.some(frame=>frame[0]===run('sprites.brute')),'guard impact must retain the combat character atlas');
   for(const type of ['brute','lizard','wraith','knight'])for(const [dir,expectedRow] of [['up',1],['down',2],['left',type==='wraith'?4:3],['right',type==='wraith'?3:4]]){
     run(`enter(1);enemy.type='${type}';attack={dir:'${dir}',kind:'normal',at:time+900};draw()`);
     const prep=imageCalls.findLast(frame=>frame[0]===run(`sprites['${type}']`));
@@ -222,5 +223,23 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
     }`);
     assert.equal(run('phase'),'won',`starter equipment can finish floor ${f} using correctly timed defenses`);
     assert.equal(run('run.damage'),0);
+  }
+});
+
+test('rig transitions are continuous at contact and recovery; IK preserves both limb lengths',()=>{
+  for(const dir of ['up','down','left','right']){
+    for(const ms of [0,60,110,155,300]){
+      const before=core.heroPose('slash',dir,Math.max(0,ms-.01)),after=core.heroPose('slash',dir,ms+.01);
+      for(const key of Object.keys(core.HERO_REST))assert.ok(Math.abs(before[key]-after[key])<.01,`${dir}/${ms}/${key} snaps`);
+    }
+    const contact=core.heroPose('slash',dir,110);assert.ok(Math.abs(contact.torso)>0);
+    assert.deepEqual(core.heroPose('slash',dir,300),core.HERO_REST);
+  }
+  for(const target of [{x:0,y:0},{x:5,y:8},{x:100,y:-100},{x:-20,y:4}])for(const bend of [-1,1]){
+    const shoulder={x:2,y:3},rig=core.solveArm(shoulder,target,12,10,bend);
+    assert.ok(Math.abs(Math.hypot(rig.elbow.x-shoulder.x,rig.elbow.y-shoulder.y)-12)<1e-8);
+    assert.ok(Math.abs(Math.hypot(rig.hand.x-rig.elbow.x,rig.hand.y-rig.elbow.y)-10)<1e-8);
+    assert.ok(Object.values(rig.hand).every(Number.isFinite));
+    if(Math.hypot(target.x-shoulder.x,target.y-shoulder.y)>2&&Math.hypot(target.x-shoulder.x,target.y-shoulder.y)<22)assert.ok(Math.hypot(rig.hand.x-target.x,rig.hand.y-target.y)<1e-8);
   }
 });

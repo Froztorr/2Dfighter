@@ -103,20 +103,37 @@ export function equip(save,slot,id){
   return true;
 }
 export const DIR = { up: 'down', down: 'up', left: 'right', right: 'left' };
+export const HERO_REST={torso:0,arm:0,forearm:0,offarm:0,offforearm:0,wrist:-.65,leg:0,knee:0,x:0,y:0};
+const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
+export function blendPose(a,b,t){const w=smooth(t);return Object.fromEntries(Object.keys(HERO_REST).map(k=>[k,(a[k]||0)+((b[k]||0)-(a[k]||0))*w]));}
 export function heroPose(action,dir,elapsed){
-  const rest={torso:0,arm:0,forearm:0,offarm:0,leg:0,x:0,y:0};
-  if(action==='guard')return {...rest,torso:-.09,arm:-.35,forearm:-.7,offarm:.85,leg:.1,y:2};
-  if(elapsed<0||elapsed>=280)return rest;
-  const p=elapsed/280,weight=Math.sin(Math.PI*p);
-  if(action==='hurt')return {...rest,torso:-.24*weight,x:-5*weight,y:3*weight,arm:.45*weight,leg:-.15*weight};
-  if(action==='dodge')return {...rest,torso:(dir==='left'?-.3:.3)*weight,leg:.32*weight,arm:-.5*weight,y:4*weight};
-  if(action==='cast')return {...rest,arm:-1.5*weight,forearm:-.8*weight,offarm:1.2*weight,torso:-.08*weight,y:-3*weight};
-  if(action!=='slash')return rest;
-  // Windup -> contact -> recovery: the weapon follows the arm, not an independent pivot.
-  const wind=p<.2?p/.2:Math.max(0,1-(p-.2)/.22),strike=p<.2?0:p<.4?(p-.2)/.2:Math.pow((1-p)/.6,2);
-  const poses={right:[-1.6,1.3,-.18,.22],left:[1.1,-1.9,.18,-.24],up:[.55,-2.6,.12,-.12],down:[-2.8,.5,-.12,.28]};
+  if(action==='guard')return {...HERO_REST,torso:-.06,arm:-.35,forearm:-.65,offarm:.65,offforearm:-.8,leg:.08,knee:.12,y:2};
+  const duration=action==='slash'?300:action==='cast'?420:320;
+  if(elapsed<0||elapsed>=duration)return {...HERO_REST};
+  const w=Math.sin(Math.PI*smooth(elapsed/duration));
+  if(action==='hurt')return {...HERO_REST,torso:-.18*w,x:-5*w,y:3*w,arm:.3*w,leg:-.12*w,knee:.15*w};
+  if(action==='dodge')return {...HERO_REST,torso:(dir==='left'?-.22:.22)*w,leg:.23*w,knee:.25*w,arm:-.4*w,y:4*w};
+  if(action==='cast')return {...HERO_REST,arm:-1.4*w,forearm:-.6*w,offarm:1.1*w,offforearm:-.5*w,torso:-.08*w,y:-3*w};
+  if(action!=='slash')return {...HERO_REST};
+  const poses={right:[.9,-1.4,.12,-.19],left:[-1.4,1.15,-.12,.2],up:[.5,-2,.09,-.1],down:[-2,.35,-.1,.14]};
   const [a,b,c,d]=poses[dir]||poses.right;
-  return {arm:a*wind+b*strike,forearm:-.45*wind+.3*strike,offarm:-.25*strike,torso:c*wind+d*strike,leg:.22*strike-.07*wind,x:8*strike-2*wind,y:dir==='up'?-4*strike:3*strike};
+  const wind={...HERO_REST,arm:a,forearm:-.65,torso:c,leg:-.06,knee:.08,x:-2,y:1};
+  const wrist=({right:.85,left:-2.25,up:-.65,down:2.5}[dir]??.85)-b+.25-d;
+  const contact={...HERO_REST,wrist,arm:b,forearm:-.25,offarm:-.22,offforearm:-.3,torso:d,leg:.16,knee:.12,x:7,y:dir==='up'?-3:2};
+  // Contact coincides with the existing 110ms gameplay hit; zero velocity at joins.
+  if(elapsed<60)return blendPose(HERO_REST,wind,elapsed/60);
+  if(elapsed<110)return blendPose(wind,contact,(elapsed-60)/50);
+  if(elapsed<155)return blendPose(contact,{...contact,arm:b*.9,x:8},(elapsed-110)/45);
+  return blendPose({...contact,arm:b*.9,x:8},HERO_REST,(elapsed-155)/145);
+}
+export function jointEnd(start,length,angle){return {x:start.x+Math.sin(angle)*length,y:start.y+Math.cos(angle)*length};}
+export function solveArm(shoulder,target,upper,lower,bend=1){
+  const dx=target.x-shoulder.x,dy=target.y-shoulder.y;
+  const distance=Math.max(Math.abs(upper-lower)+.001,Math.min(upper+lower-.001,Math.hypot(dx,dy)));
+  const heading=Math.atan2(dx,dy),offset=Math.acos(Math.max(-1,Math.min(1,(upper*upper+distance*distance-lower*lower)/(2*upper*distance))));
+  const arm=heading+bend*offset,elbow=jointEnd(shoulder,upper,arm);
+  const reachable=jointEnd(shoulder,distance,heading),forearm=Math.atan2(reachable.x-elbow.x,reachable.y-elbow.y)-arm;
+  return {arm,forearm,elbow,hand:jointEnd(elbow,lower,arm+forearm)};
 }
 export function impactParticles(dir,count,random=Math.random){
   const angle={up:-Math.PI/2,down:Math.PI/2,left:Math.PI,right:0}[dir]??0;
