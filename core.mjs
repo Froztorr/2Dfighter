@@ -108,50 +108,6 @@ export const HERO_ACTIONS={
   parry:{duration:360},dodge:{duration:320},stun:{duration:Infinity},death:{duration:900},
   hurt:{duration:360},cast:{duration:520},ward:{duration:400},heal:{duration:700},victory:{duration:1100},walk:{duration:Infinity}
 };
-export const HERO_REST={torso:0,head:0,arm:0,forearm:0,offarm:0,offforearm:0,wrist:-.65,leg:0,offleg:0,knee:0,offknee:0,x:0,y:0,rotation:0,alpha:1};
-const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
-export function blendPose(a,b,t){const w=smooth(t);return Object.fromEntries(Object.keys(HERO_REST).map(k=>[k,(a[k]??HERO_REST[k])+((b[k]??HERO_REST[k])-(a[k]??HERO_REST[k]))*w]));}
-export function heroPose(action,dir,elapsed){
-  const rest={...HERO_REST},guard={...rest,torso:.07,head:-.04,arm:-.35,forearm:-.65,offarm:.65,offforearm:-.8,leg:.09,offleg:-.12,knee:.22,offknee:-.18,y:4};
-  if(elapsed<0)return rest;
-  if(action==='guard')return guard;
-  if(action==='stun')return {...rest,torso:.19+Math.sin(elapsed/130)*.035,head:.20,leg:.13,offleg:-.07,knee:.34,offknee:-.25,y:9,x:Math.sin(elapsed/150)*1.2};
-  if(action==='death'){
-    const kneel=smooth(elapsed/240),fall=smooth((elapsed-240)/580);
-    return {...rest,torso:.20*kneel,head:.25*kneel,leg:.25*kneel,offleg:-.14*kneel,knee:.60*kneel,offknee:-.42*kneel,y:5*kneel,x:8*fall,rotation:1.35*fall,alpha:1-.15*fall};
-  }
-  if(action==='walk'){const step=Math.sin(elapsed/95);return {...rest,leg:.18*step,offleg:-.18*step,knee:Math.max(0,step)*.23,offknee:-Math.max(0,-step)*.23,y:-Math.abs(step)*1.5,torso:step*.025};}
-  const duration=HERO_ACTIONS[action]?.duration??0;
-  if(elapsed>=duration)return action==='block'?guard:rest;
-  const w=Math.sin(Math.PI*smooth(elapsed/duration));
-  if(action==='block'){const impact=elapsed<65?smooth(elapsed/65):smooth((360-elapsed)/295);return blendPose(guard,{...guard,torso:-.16,head:.08,knee:.38,offknee:-.32,x:-5,y:7},impact);}
-  if(action==='parry')return {...rest,torso:-.12*w,head:-.04*w,leg:.14*w,offleg:-.09*w,knee:.16*w,x:3*w,y:-2*w};
-  if(action==='hurt')return {...rest,torso:-.24*w,head:.12*w,x:-7*w,y:3*w,arm:.3*w,leg:-.12*w,offleg:.08*w,knee:.21*w,offknee:-.12*w};
-  if(action==='dodge'){const sign=dir==='left'?-1:dir==='right'?1:0;return {...rest,torso:sign*.34*w,head:-sign*.10*w,leg:sign*.23*w,offleg:-sign*.18*w,knee:.48*w,offknee:-.35*w,x:sign*24*w,y:6*w+(dir==='up'?-18*w:dir==='down'?16*w:0)};}
-  if(action==='cast')return {...rest,arm:-1.4*w,forearm:-.6*w,offarm:1.1*w,offforearm:-.5*w,torso:-.10*w,head:-.08*w,y:-4*w,leg:-.05*w,offleg:.06*w};
-  if(action==='ward')return {...guard,torso:guard.torso-.11*w,y:guard.y+2*w};
-  if(action==='heal')return {...rest,torso:.07*w,head:.12*w,knee:.10*w,offknee:-.08*w,y:2*w};
-  if(action==='victory'){const raise=smooth(elapsed/240)*(1-smooth((elapsed-850)/250));return {...rest,torso:-.08*raise,head:-.06*raise,leg:.08*raise,offleg:-.08*raise,y:-2*raise};}
-  if(action!=='slash')return rest;
-  const poses={right:[.9,-1.4,.12,-.19],left:[-1.4,1.15,-.12,.2],up:[.5,-2,.09,-.1],down:[-2,.35,-.1,.14]};
-  const [a,b,c,d]=poses[dir]||poses.right;
-  const wind={...rest,arm:a,forearm:-.65,torso:c,head:-c*.2,leg:-.06,offleg:.06,knee:.12,offknee:-.10,x:-2,y:2};
-  const wrist=({right:.85,left:-2.25,up:-.65,down:2.5}[dir]??.85)-b+.25-d;
-  const contact={...rest,wrist,arm:b,forearm:-.25,offarm:-.22,offforearm:-.3,torso:d,head:-d*.2,leg:.18,offleg:-.13,knee:.18,offknee:-.10,x:dir==='left'?-7:7,y:dir==='up'?-4:3};
-  if(elapsed<60)return blendPose(rest,wind,elapsed/60);
-  if(elapsed<110)return blendPose(wind,contact,(elapsed-60)/50);
-  if(elapsed<155)return blendPose(contact,{...contact,arm:b*.9,x:contact.x*1.12},(elapsed-110)/45);
-  return blendPose({...contact,arm:b*.9,x:contact.x*1.12},rest,(elapsed-155)/145);
-}
-export function jointEnd(start,length,angle){return {x:start.x+Math.sin(angle)*length,y:start.y+Math.cos(angle)*length};}
-export function solveArm(shoulder,target,upper,lower,bend=1){
-  const dx=target.x-shoulder.x,dy=target.y-shoulder.y;
-  const distance=Math.max(Math.abs(upper-lower)+.001,Math.min(upper+lower-.001,Math.hypot(dx,dy)));
-  const heading=Math.atan2(dx,dy),offset=Math.acos(Math.max(-1,Math.min(1,(upper*upper+distance*distance-lower*lower)/(2*upper*distance))));
-  const arm=heading+bend*offset,elbow=jointEnd(shoulder,upper,arm);
-  const reachable=jointEnd(shoulder,distance,heading),relative=Math.atan2(reachable.x-elbow.x,reachable.y-elbow.y)-arm,forearm=Math.atan2(Math.sin(relative),Math.cos(relative));
-  return {arm,forearm,elbow,hand:jointEnd(elbow,lower,arm+forearm)};
-}
 export function impactParticles(dir,count,random=Math.random){
   const angle={up:-Math.PI/2,down:Math.PI/2,left:Math.PI,right:0}[dir]??0;
   return Array.from({length:count},()=>{const a=angle+(random()-.5)*1.1,speed=35+random()*95;return {vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,life:260+random()*330,size:1+random()*2};});

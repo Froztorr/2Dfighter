@@ -2,15 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+const fps=await import('./fps-player.mjs');
 const core = await import('./core.mjs').catch(() => ({}));
 
-test('combat poses articulate the body, recover to rest and send impact particles along the hit',()=>{
-  const right=core.heroPose('slash','right',110),left=core.heroPose('slash','left',110);
-  assert.notEqual(right.arm,left.arm);assert.notEqual(right.torso,0);assert.notEqual(right.leg,0);
-  assert.equal(core.heroPose('slash','right',500).torso,0);
-  assert.ok(core.impactParticles('up',10).every(p=>p.vy<0));
-  assert.ok(core.impactParticles('right',10).every(p=>p.vx>0));
-});
+test('impact particles follow the hit direction',()=>{assert.ok(core.impactParticles('up',10).every(p=>p.vy<0));assert.ok(core.impactParticles('right',10).every(p=>p.vx>0));});
 
 test('daily quests reset at Bangkok midnight and pay once, minigame prizes are capped and survive reload',()=>{
   const s=core.newSave(),before=Date.parse('2026-09-22T16:59:59Z'),after=before+1000;
@@ -127,7 +122,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   const imageCalls=[];
   const drawing=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
   const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{setProperty(){}},dataset:{},hidden:true,setAttribute(){},classList:{toggle(){}},addEventListener(type,fn){events.set(id+':'+type,fn);},getContext:()=>drawing,querySelector:()=>node('heading'),getBoundingClientRect:()=>({left:0,top:0,width:240,height:400}),setPointerCapture(){}});return nodes.get(id);};
-  const context=vm.createContext({...core,createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){if(/\/(frost|spider|demon)\.png$/.test(path)){this.naturalWidth=1024;this.naturalHeight=1536;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
+  const context=vm.createContext({...core,...fps,createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){if(/\/(frost|spider|demon)\.png$/.test(path)){this.naturalWidth=1024;this.naturalHeight=1536;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
   const source=(await readFile(new URL('./app.js',import.meta.url),'utf8')).replace(/^import[^\n]+\n/gm,'');
   vm.runInContext(source,context);
   const run=s=>vm.runInContext(s,context);
@@ -226,49 +221,20 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   }
 });
 
-test('rig transitions are continuous at contact and recovery; IK preserves both limb lengths',()=>{
-  for(const dir of ['up','down','left','right']){
-    for(const ms of [0,60,110,155,300]){
-      const before=core.heroPose('slash',dir,Math.max(0,ms-.01)),after=core.heroPose('slash',dir,ms+.01);
-      for(const key of Object.keys(core.HERO_REST))assert.ok(Math.abs(before[key]-after[key])<.01,`${dir}/${ms}/${key} snaps`);
-    }
-    const contact=core.heroPose('slash',dir,110);assert.ok(Math.abs(contact.torso)>0);
-    assert.deepEqual(core.heroPose('slash',dir,300),core.HERO_REST);
+test('first-person frames preserve directional contact and terminal states',async()=>{
+  const {playerFrame,equipmentArt}=await import('./fps-player.mjs');
+  const rows={right:1,left:2,up:3,down:4};
+  for(const [dir,row]of Object.entries(rows)){
+    assert.equal(playerFrame('slash',dir,109).column,3);
+    assert.deepEqual(playerFrame('slash',dir,110),{row,column:4,index:row*8+4});
+    assert.equal(playerFrame('slash',dir,300).row,0);
+    assert.equal(new Set(Array.from({length:300},(_,ms)=>playerFrame('slash',dir,ms).index)).size,8);
   }
-  for(const target of [{x:0,y:0},{x:5,y:8},{x:100,y:-100},{x:-20,y:4}])for(const bend of [-1,1]){
-    const shoulder={x:2,y:3},rig=core.solveArm(shoulder,target,12,10,bend);
-    assert.ok(Math.abs(Math.hypot(rig.elbow.x-shoulder.x,rig.elbow.y-shoulder.y)-12)<1e-8);
-    assert.ok(Math.abs(Math.hypot(rig.hand.x-rig.elbow.x,rig.hand.y-rig.elbow.y)-10)<1e-8);
-    assert.ok(Object.values(rig.hand).every(Number.isFinite));
-    if(Math.hypot(target.x-shoulder.x,target.y-shoulder.y)>2&&Math.hypot(target.x-shoulder.x,target.y-shoulder.y)<22)assert.ok(Math.hypot(rig.hand.x-target.x,rig.hand.y-target.y)<1e-8);
-  }
-});
-
-test('character rig keeps two separated hands on one handle, fixed bones and bounded elbows',async()=>{
-  const {characterRig}=await import('./hero-rig.mjs');
-  for(const twoHanded of [false,true])for(const action of Object.keys(core.HERO_ACTIONS))for(const dir of ['up','down','left','right'])for(let elapsed=0;elapsed<=1200;elapsed+=5){
-    const rig=characterRig({action,dir,elapsed,twoHanded,width:112,height:149});
-    for(const side of ['main','off']){
-      const arm=rig[side],shoulder=rig.shoulders[side];
-      assert.ok(Math.abs(Math.hypot(arm.elbow.x-shoulder.x,arm.elbow.y-shoulder.y)-rig.upper)<1e-7);
-      assert.ok(Math.abs(Math.hypot(arm.hand.x-arm.elbow.x,arm.hand.y-arm.elbow.y)-rig.lower)<1e-7);
-      assert.ok(Math.abs(arm.forearm)<2.45,'elbow must not fold completely backwards');
-    }
-    if(twoHanded){
-      const dx=rig.off.hand.x-rig.main.hand.x,dy=rig.off.hand.y-rig.main.hand.y;
-      assert.ok(Math.abs(Math.hypot(dx,dy)-149*.075)<.01,'hands must stay separated');
-      const shaft=rig.weaponAngle+.65;
-      assert.ok(Math.abs(dx*Math.cos(shaft)+dy*Math.sin(shaft))<.01,'both grips must lie on the same shaft');
-    }
-  }
-});
-
-test('combat states have distinct silhouettes, recover on time and preserve terminal poses',()=>{
-  const actions=['block','parry','dodge','hurt','stun','death','cast','ward','heal','victory'];
-  const signatures=actions.map(action=>JSON.stringify(core.heroPose(action,'right',action==='death'?900:150)));
-  assert.equal(new Set(signatures).size,actions.length);
-  for(const action of ['parry','dodge','hurt','cast','ward','heal','victory'])assert.deepEqual(core.heroPose(action,'right',core.HERO_ACTIONS[action].duration),core.HERO_REST);
-  assert.deepEqual(core.heroPose('block','right',360),core.heroPose('guard','right',0));
-  assert.equal(core.heroPose('death','right',2000).rotation,1.35);
-  assert.ok(core.heroPose('stun','right',2000).y>0);
+  for(const action of Object.keys(core.HERO_ACTIONS))for(let ms=0;ms<1500;ms+=7){const f=playerFrame(action,'left',ms);assert.ok(f.row>=0&&f.row<8&&f.column>=0&&f.column<8);}
+  assert.equal(playerFrame('death','right',2000).index,63);
+  assert.equal(playerFrame('stun','right',2000).row,7);
+  assert.deepEqual(playerFrame('block','right',360),playerFrame('guard','right',0));
+  const save=core.newSave();save.owned=Object.keys(core.ITEMS);
+  for(const [armor,look]of [[null,0],['scale-mail',1],['leather-vest',2],['mage-robe',3]]){core.equip(save,'armor',armor);assert.equal(equipmentArt(save).look,look);}
+  core.equip(save,'weapon','ember-staff');assert.equal(equipmentArt(save).twoHanded,true);assert.equal(equipmentArt(save).offhand,null);
 });

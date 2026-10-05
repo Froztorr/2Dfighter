@@ -4,59 +4,62 @@ import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 const url=process.env.BROWSER_TEST_URL||'http://127.0.0.1:4173';
 let server,browser;
+const source=await readFile('app.js','utf8');
+async function setup(page,errors){
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.route('**/app.js',async route=>route.fulfill({contentType:'text/javascript',body:source+'\nwindow.__animationTest=code=>eval(code);'}));
+ await page.goto(url);await page.waitForFunction(()=>window.__animationTest&&window.__animationTest('spritesLoaded===Object.keys(sprites).length&&!!renderer.inspect().hero'));
+}
 try{
-  try{await fetch(url);}catch{server=spawn(process.execPath,['server.mjs'],{stdio:'ignore'});for(let i=0;i<30;i++){await new Promise(r=>setTimeout(r,100));try{if((await fetch(url)).ok)break;}catch{}}}
-  browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
-  const page=await browser.newPage({viewport:{width:1000,height:1280}}),errors=[];
-  page.on('pageerror',e=>errors.push(e.message));
-  await page.route('**/app.js',async route=>route.fulfill({contentType:'text/javascript',body:await readFile('app.js','utf8')+'\nwindow.__animationTest=code=>eval(code);'}));
-  await page.goto(url);
-  await page.waitForFunction(()=>window.__animationTest&&window.__animationTest('spritesLoaded===Object.keys(sprites).length&&!!renderer.inspect().hero'));
-  assert.equal(await page.evaluate(()=>window.__animationTest('renderer.game instanceof Phaser.Game')),true);
-  await page.evaluate(()=>window.__animationTest(`save.owned=Object.keys(ITEMS);equip(save,'helm','frost-helm');equip(save,'armor',null);equip(save,'pants',null);equip(save,'boots','trail-boots');equip(save,'weapon','ember-staff');tab='gear';openPanel();`));
-  await page.waitForFunction(()=>window.__animationTest('renderer.inspect().preview?.scene.scenes[0]?.hero?.rig'));
-  await mkdir('artifacts',{recursive:true});await page.locator('#heroPreview').screenshot({path:'artifacts/staff-equipment.png'});
-  const proof=await page.evaluate(()=>window.__animationTest(`({isPhaser:renderer.inspect().preview instanceof Phaser.Game,upper:renderer.inspect().preview.scene.scenes[0].hero.arms[1].upper.texture.key,rig:renderer.inspect().preview.scene.scenes[0].hero.rig})`));
-  assert.equal(proof.isPhaser,true);assert.match(proof.upper,/^arm-/);assert.ok(Math.hypot(proof.rig.main.hand.x-proof.rig.off.hand.x,proof.rig.main.hand.y-proof.rig.off.hand.y)>15);
-  const joints=await page.evaluate(async()=>{
-    const {PhaserHero}=await import('/phaser-renderer.mjs');const {ITEMS,newSave}=await import('/core.mjs');const sprites=window.__animationTest('sprites');
-    const entries=[];for(const weapon of ['rust-sword','greatsword','ember-staff'])for(const dir of ['idle','right','left','up','down'])entries.push({weapon,dir,gear:[],back:true});
-    for(const gear of [['wolf-helm','scale-mail','iron-greaves','plate-boots'],['rogue-hood','leather-vest','rogue-pants','trail-boots'],['mage-hat','mage-robe','mage-pants','mage-boots']])for(const dir of ['idle','right','left','up','down'])entries.push({weapon:'ember-staff',dir,gear,back:true});
-    for(const weapon of ['rust-sword','ember-staff'])for(const [action,elapsed] of [['guard',100],['block',100],['parry',150],['dodge',160],['stun',400],['death',900],['hurt',140],['cast',260],['ward',130],['heal',350],['victory',500],['walk',100]])entries.push({weapon,dir:'right',action,elapsed,gear:[],back:true});
-    const canvas=document.createElement('canvas');canvas.id='animation-gallery';canvas.style.cssText='position:absolute;top:0;left:0;width:1200px;height:3960px;z-index:100;';document.body.append(canvas);const report=[];
-    await new Promise(resolve=>{
-      class Gallery extends Phaser.Scene {
-        create(){entries.forEach((entry,i)=>{const save=newSave();save.owned=Object.keys(ITEMS);save.equipment.weapon=entry.weapon;save.equipment.offhand=ITEMS[entry.weapon].hands===2?null:'wood-shield';['helm','armor','pants','boots'].forEach((slot,j)=>save.equipment[slot]=entry.gear[j]||null);const hero=new PhaserHero(this,sprites),x=120+i%5*240,y=180+Math.floor(i/5)*360;hero.sync({save,x,y,width:140,back:entry.back,action:entry.action||(entry.dir==='idle'?'idle':'slash'),dir:entry.dir==='idle'?'right':entry.dir,elapsed:entry.elapsed??110});this.add.text(x-112,y+145,`${entry.gear[1]||entry.weapon} ${entry.action||entry.dir}`,{fontSize:'13px',fontFamily:'monospace',color:'#ffffff'});for(const arm of hero.arms){const actual=arm.wrist.getWorldTransformMatrix().transformPoint(0,0),expected=hero.body.getWorldTransformMatrix().transformPoint(hero.rig[arm.side].hand.x,hero.rig[arm.side].hand.y);report.push({error:Math.hypot(actual.x-expected.x,actual.y-expected.y),texture:arm.upper.texture.key,rearParent:arm.shoulder.parentContainer===hero.rearArms,rearBehindBody:hero.actor.getIndex(hero.rearArms)<hero.actor.getIndex(hero.body),gearBehindArms:hero.actor.getIndex(hero.rearEquipment)<hero.actor.getIndex(hero.rearArms)&&arm.gear.parentContainer===hero.rearEquipment,gripError:!arm.gear.visible?0:(()=>{const grip=arm.gear.getWorldTransformMatrix().transformPoint(0,0);return Math.hypot(actual.x-grip.x,actual.y-grip.y);})(),backHead:hero.head.texture.key.includes('-true-')});}});window.__galleryReady=true;resolve();}
-      }
-      window.__gallery=new Phaser.Game({type:Phaser.CANVAS,canvas,width:1200,height:3960,backgroundColor:'#36313e',pixelArt:true,antialias:false,audio:{noAudio:true},scene:Gallery,banner:false});
-    });return report;
-  });
-  assert.equal(joints.length,108);assert.ok(joints.every(j=>j.error<.001&&/^arm-back-/.test(j.texture)&&j.rearParent&&j.rearBehindBody&&j.backHead&&j.gearBehindArms&&j.gripError<.001),`maximum Phaser matrix error: ${Math.max(...joints.map(j=>j.error))}`);
-  await page.waitForTimeout(80);await page.locator('#animation-gallery').screenshot({path:'artifacts/phaser-poses.png'});
-  await page.evaluate(()=>{window.__gallery.destroy(true);window.__animationTest(`renderer.closePreview();$('panel').hidden=true;$('intro').hidden=true;enter(1);paused=true;`);});
-  // Actual native sprites and Phaser tweens run through all enemy attack directions.
-  for(const type of ['brute','lizard','wraith','knight','frost','spider','demon'])for(const dir of ['up','down','left','right']){
-    await page.evaluate(({type,dir})=>window.__animationTest(`enter(1);enemy.type='${type}';paused=false;attack={dir:'${dir}',kind:'normal',started:time,at:time+900};draw();`),{type,dir});
-    await page.waitForTimeout(110);
-    assert.ok(await page.evaluate(()=>window.__animationTest('renderer.inspect().enemyImages[1].alpha>.9')));
-    await page.evaluate(()=>window.__animationTest('resolveAttack();draw();'));
-    await page.waitForTimeout(110);
-    assert.ok(await page.evaluate(()=>window.__animationTest('renderer.inspect().enemyImages[1].alpha>.9')));
-  }
-  await page.evaluate(()=>window.__animationTest('enter(1);flash=0;paused=false;'));
-  await page.waitForTimeout(150);await page.evaluate(()=>window.__animationTest('paused=true'));
-  await page.screenshot({path:'artifacts/phaser-combat.png'});
-  for(const kind of ['heavy','sweep']){
-    await page.evaluate(kind=>window.__animationTest(`equip(save,'weapon','rust-sword');equip(save,'offhand','wood-shield');enter(1);paused=false;attack={dir:'left',kind:'${kind}',started:time,at:time+1300};hud();draw();`),kind);
-    assert.equal(await page.locator('#attackArrow').isVisible(),false);assert.equal(await page.locator('#attackArrow').textContent(),'');
-    const auraBefore=await page.evaluate(()=>window.__animationTest('renderer.inspect().dangerAura.commandBuffer.slice()'));assert.ok(auraBefore.length>0);const before=await page.locator('#scene').screenshot();await page.waitForTimeout(180);const after=await page.locator('#scene').screenshot();assert.notDeepEqual(before,after);assert.notDeepEqual(auraBefore,await page.evaluate(()=>window.__animationTest('renderer.inspect().dangerAura.commandBuffer.slice()')));
-    await page.screenshot({path:`artifacts/${kind}-danger.png`});
-    await page.evaluate(()=>window.__animationTest('setBlocking(true);resolveAttack();hud();'));
-    assert.equal(await page.evaluate(()=>window.__animationTest('currentHero().action')),'block');
-  }
-  await page.evaluate(()=>window.__animationTest(`enter(1);hp=1;attack={dir:'down',kind:'normal',at:time};resolveAttack();hud();`));
-  assert.equal(await page.evaluate(()=>window.__animationTest('phase==="dead"&&!paused&&currentHero().action==="death"')),true);
-  await page.waitForTimeout(650);await page.screenshot({path:'artifacts/death-animation.png'});
-  await page.waitForTimeout(700);assert.equal(await page.evaluate(()=>window.__animationTest('paused')),true);
-  assert.deepEqual(errors,[]);console.log('Phaser browser checks passed: equipment preview, 54 poses / 108 arm chains, 28 enemy attacks, block-only cues, delayed death. Screenshots: artifacts/');
+ try{await fetch(url);}catch{server=spawn(process.execPath,['server.mjs'],{stdio:'ignore'});for(let i=0;i<30;i++){await new Promise(r=>setTimeout(r,100));try{if((await fetch(url)).ok)break;}catch{}}}
+ browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+ const page=await browser.newPage({viewport:{width:1000,height:1280}}),errors=[];await setup(page,errors);await mkdir('artifacts',{recursive:true});
+ assert.equal(await page.evaluate(()=>window.__animationTest('renderer.game instanceof Phaser.Game')),true);
+ // Only equipment needed by the current player loads at startup.
+ assert.ok(await page.evaluate(()=>window.__animationTest("!sprites['fps-inferno-axe-plate']")));
+ await page.evaluate(async()=>{const {PLAYER_SHEETS}=await import('/fps-player.mjs');await Promise.all(PLAYER_SHEETS.map(name=>new Promise((resolve,reject)=>{const image=window.__animationTest(`loadSprite('${name}')`);if(image.complete&&image.naturalWidth)return resolve();image.addEventListener('load',resolve,{once:true});image.addEventListener('error',()=>reject(Error(name)),{once:true});})));});
+ await page.evaluate(()=>window.__animationTest(`save.owned=Object.keys(ITEMS);equip(save,'armor','scale-mail');equip(save,'weapon','rust-sword');equip(save,'offhand','wood-shield');$('intro').hidden=true;enter(1);paused=false;nextAttack=time+100000;`));
+ await page.waitForTimeout(180);await page.evaluate(()=>window.__animationTest('paused=true'));await page.screenshot({path:'artifacts/first-person-combat.png'});
+ const report=await page.evaluate(async()=>{
+  const {FirstPersonPlayer}=await import('/phaser-renderer.mjs');const {ITEMS,newSave,HERO_ACTIONS}=await import('/core.mjs');const {PLAYER_WEAPONS}=await import('/fps-player.mjs');const sprites=window.__animationTest('sprites');
+  const canvas=document.createElement('canvas');canvas.id='first-person-gallery';canvas.style.cssText='position:absolute;top:0;left:0;width:1920px;height:5040px;z-index:100';document.body.append(canvas);const report=[];
+  await new Promise(resolve=>{class Gallery extends Phaser.Scene{create(){
+   const examples=[['idle',0,'right'],['slash',82,'right'],['slash',110,'left'],['slash',110,'up'],['slash',110,'down'],['guard',0,'right'],['cast',230,'up'],['death',700,'right']],armors=[null,'scale-mail','leather-vest','mage-robe','frost-plate','inferno-robe'];
+   const verify=new FirstPersonPlayer(this,sprites),state=newSave();state.owned=Object.keys(ITEMS);
+   for(const armor of armors)for(const weapon of PLAYER_WEAPONS){state.equipment.armor=armor;state.equipment.weapon=weapon;state.equipment.offhand=ITEMS[weapon].hands===2?null:'wood-shield';for(const action of Object.keys(HERO_ACTIONS))for(let elapsed=0;elapsed<=900;elapsed+=30){verify.sync({save:state,action,dir:'left',elapsed});if(!verify.image.visible)throw Error('Missing held weapon '+weapon+'/'+armor);if(verify.root.rotation!==0||verify.image.rotation!==0||verify.offImage.rotation!==0||verify.arms||verify.body)throw Error('Player must use frames without a joint rig');if(verify.image.frame.name!==verify.frame.index)throw Error('Frame timing mismatch');}report.push({weapon,armor,key:verify.image.texture.key});}
+   verify.destroy();
+   let row=0;for(const armor of armors.slice(0,4))for(const weapon of ['rust-sword','greatsword','ember-staff']){examples.forEach(([action,elapsed,dir],col)=>{const save=newSave();save.equipment.armor=armor;save.equipment.weapon=weapon;save.equipment.offhand=ITEMS[weapon].hands===2?null:'wood-shield';const hero=new FirstPersonPlayer(this,sprites);hero.sync({save,action,dir,elapsed});hero.root.setPosition(col*240,row*420);this.add.text(col*240+5,row*420+400,`${armor||'linen'} / ${weapon} / ${action} ${dir}`,{fontSize:'10px',color:'#f7dec3'});});row++;}
+   window.__galleryReady=true;resolve();}}
+   window.__gallery=new Phaser.Game({type:Phaser.CANVAS,canvas,width:1920,height:5040,backgroundColor:'#302c36',pixelArt:true,antialias:false,audio:{noAudio:true},scene:Gallery,banner:false});
+  });return report;
+ });
+ assert.equal(report.length,78);await page.waitForTimeout(120);await page.locator('#first-person-gallery').screenshot({path:'artifacts/first-person-poses.png'});
+ await page.evaluate(()=>window.__gallery.destroy(true));
+ // Independent menu equipment uses the new complete figure art at its native proportions.
+ for(const [armor,weapon]of [['scale-mail','rust-sword'],['leather-vest','venom-dagger'],['mage-robe','ember-staff']]){
+  await page.evaluate(({armor,weapon})=>window.__animationTest(`equip(save,'armor','${armor}');equip(save,'weapon','${weapon}');tab='gear';openPanel();`),{armor,weapon});
+  await page.waitForFunction(()=>window.__animationTest('renderer.inspect().preview?.scene.scenes[0]?.hero?.equipment'));
+  assert.equal(await page.evaluate(()=>window.__animationTest('renderer.inspect().preview instanceof Phaser.Game')),true);
+  await page.locator('#heroPreview').screenshot({path:`artifacts/portrait-${armor}.png`});
+ }
+ await page.evaluate(()=>window.__animationTest(`renderer.closePreview();$('panel').hidden=true;equip(save,'armor','scale-mail');equip(save,'weapon','rust-sword');equip(save,'offhand','wood-shield');enter(1);`));
+ for(const kind of ['heavy','sweep']){
+  await page.evaluate(kind=>window.__animationTest(`attack={dir:'left',kind:'${kind}',started:time,at:time+1300};hud();draw();`),kind);
+  assert.equal(await page.locator('#attackArrow').isVisible(),false);assert.equal(await page.locator('#attackArrow').textContent(),'');
+  const aura=await page.evaluate(()=>window.__animationTest('renderer.inspect().dangerAura.commandBuffer.slice()'));assert.ok(aura.length>0);await page.waitForTimeout(150);assert.notDeepEqual(aura,await page.evaluate(()=>window.__animationTest('renderer.inspect().dangerAura.commandBuffer.slice()')));
+  await page.screenshot({path:`artifacts/first-person-${kind}.png`});await page.evaluate(()=>window.__animationTest('setBlocking(true);resolveAttack();hud();'));
+  assert.equal(await page.evaluate(()=>window.__animationTest('currentHero().action')),'block');await page.waitForTimeout(120);
+  assert.ok([2,3,4].includes(await page.evaluate(()=>window.__animationTest('renderer.inspect().hero.offImage.frame.name'))));
+  await page.evaluate(()=>window.__animationTest('releaseGuard();stamina=100'));
+ }
+ // Weapons/offhands really change artwork; shields show their held rear surface.
+ const offKeys=new Set();for(const off of ['wood-shield','steel-shield','guardian-shield','frost-shield','parry-dagger','assassin-dagger','spider-claw']){
+  await page.evaluate(off=>window.__animationTest(`equip(save,'offhand','${off}');animateHero('idle');`),off);await page.waitForTimeout(25);
+  offKeys.add(await page.evaluate(()=>window.__animationTest('renderer.inspect().hero.offImage.frame.name')));
+ }assert.equal(offKeys.size,7);
+ await page.evaluate(()=>window.__animationTest(`enter(1);hp=1;attack={dir:'down',kind:'normal',at:time};resolveAttack();hud();`));
+ assert.equal(await page.evaluate(()=>window.__animationTest('phase==="dead"&&!paused&&currentHero().action==="death"')),true);
+ await page.waitForTimeout(650);await page.screenshot({path:'artifacts/first-person-death.png'});await page.waitForTimeout(700);assert.equal(await page.evaluate(()=>window.__animationTest('paused')),true);
+ await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.__animationTest(`equip(save,'weapon','ember-staff');equip(save,'armor','mage-robe');enter(1);nextAttack=time+100000;`));await page.waitForTimeout(120);await page.screenshot({path:'artifacts/first-person-mobile.png'});
+ assert.deepEqual(errors,[]);console.log('Phaser first-person browser checks passed: 78 weapon/material combinations, all combat states, 7 offhands, full-body portraits, block-only cues, delayed death, mobile viewport. Screenshots: artifacts/');
 }finally{await browser?.close();server?.kill();}

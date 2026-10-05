@@ -1,114 +1,103 @@
-import { ITEMS, HERO_REST, heroPose } from './core.mjs';
-import { characterRig } from './hero-rig.mjs';
+import { ITEMS } from './core.mjs';
+import { playerFrame, equipmentArt, PLAYER_LOOKS, MATERIAL_PROFILES, materialProfile, OFFHAND_ROWS, offhandFrame, ITEM_GRIPS } from './fps-player.mjs';
 
-// Each arm is newly authored as a complete rounded segment, never a torso strip.
-// Rectangles only select cells of the original unmodified generated PNG.
-const armRects=[
-  [[126,18,176,328],[466,38,178,308],[793,109,200,241]],
-  [[94,362,218,346],[468,376,196,340],[790,460,218,260]],
-  [[107,720,200,350],[463,743,189,330],[793,830,206,250]],
-  [[98,1083,231,337],[457,1083,234,337],[789,1172,213,250]]
-];
-const rearArmRects=[
-  [[132,35,178,326],[463,30,157,327],[818,100,162,274]],
-  [[112,378,214,343],[463,384,169,343],[817,464,170,264]],
-  [[114,728,208,335],[462,746,169,316],[822,837,177,253]],
-  [[103,1073,243,357],[446,1080,215,347],[818,1170,189,258]]
-];
-const grips={
-  'rust-sword':[.28,.76],'iron-sword':[.30,.77],mace:[.27,.79],axe:[.30,.77],greatsword:[.25,.78],
-  'ember-staff':[.24,.79],'parry-dagger':[.30,.77],'venom-dagger':[.31,.77],'fire-wand':[.27,.78],
-  'ice-staff':[.25,.78],'frost-sword':[.24,.80],'spider-fang':[.26,.80],'spider-claw':[.70,.76],
-  'assassin-dagger':[.66,.35],'inferno-axe':[.25,.81],'demon-staff':[.20,.82]
-};
-const bodyMasks={
-  torso:[[.35,.24],[.65,.24],[.665,.49],[.73,.61],[.27,.61],[.335,.49]],
-  torsoMage:[[.35,.24],[.65,.24],[.65,.61],[.35,.61]],
-  head:[[.1,0],[.9,0],[.9,.235],[.61,.28],[.39,.28],[.1,.235]],
-  thigh:[[.28,.56],[.50,.56],[.49,.79],[.30,.80]],
-  shin:[[.29,.75],[.49,.75],[.49,1],[.22,1]],
-  skirt:[[.25,.55],[.75,.55],[.82,.91],[.18,.91]]
-};
-function maskedTexture(scene,key,sheet,sx,sy,sw,sh,polygon){
-  if(scene.textures.exists(key))return key;
-  const tex=scene.textures.createCanvas(key,sw,sh),c=tex.context;
-  c.beginPath();polygon.forEach(([x,y],i)=>i?c.lineTo(x*sw,y*sh):c.moveTo(x*sw,y*sh));c.closePath();c.clip();
-  c.drawImage(sheet,sx,sy,sw,sh,0,0,sw,sh);tex.refresh();return key;
-}
 function addTexture(scene,key,sheet,rect){
   if(scene.textures.exists(key))return key;
-  const tex=scene.textures.createCanvas(key,rect[2],rect[3]);tex.context.drawImage(sheet,...rect,0,0,rect[2],rect[3]);tex.refresh();return key;
+  const tex=scene.textures.createCanvas(key,rect[2],rect[3]);tex.context.imageSmoothingEnabled=false;tex.context.drawImage(sheet,...rect,0,0,rect[2],rect[3]);tex.refresh();return key;
 }
-export class PhaserHero {
-  constructor(scene,sprites){
-    this.scene=scene;this.sprites=sprites;this.root=scene.add.container(0,0);this.actor=scene.add.container(0,0);this.root.add(this.actor);this.rearEquipment=scene.add.container(0,0);this.rearArms=scene.add.container(0,0);this.body=scene.add.container(0,0);this.actor.add([this.rearEquipment,this.rearArms,this.body]);
-    this.legs=[-1,1].map(side=>{const hip=scene.add.container(0,0),thigh=scene.add.image(0,0,'__WHITE'),knee=scene.add.container(0,0),shin=scene.add.image(0,0,'__WHITE');hip.add([thigh,knee]);knee.add(shin);this.actor.addAt(hip,2);return {side,hip,thigh,knee,shin};});
-    this.skirt=scene.add.image(0,0,'__WHITE');this.torso=scene.add.image(0,0,'__WHITE');this.head=scene.add.image(0,0,'__WHITE');this.cloak=scene.add.image(0,0,'__WHITE');this.neck=scene.add.image(0,0,'__WHITE');this.body.add([this.skirt,this.torso,this.cloak,this.head,this.neck]);
-    this.frontEquipment=scene.add.container(0,0);this.body.add(this.frontEquipment);
-    this.arms=['off','main'].map(side=>{const shoulder=scene.add.container(0,0),upper=scene.add.image(0,0,'__WHITE'),elbow=scene.add.container(0,0),fore=scene.add.image(0,0,'__WHITE'),wrist=scene.add.container(0,0),gear=scene.add.image(0,0,'__WHITE'),hand=scene.add.image(0,0,'__WHITE');shoulder.add([upper,elbow]);elbow.add([fore,wrist]);wrist.add(hand);this.rearEquipment.add(gear);this.body.add(shoulder);return {side,shoulder,upper,elbow,fore,wrist,gear,hand};});
-  }
-  bodyPiece(image,name,slot,save,w,h,back,side=0){
-    const item=ITEMS[save.equipment[slot]],look=item?.look||0,sheet=this.sprites.hero,cw=sheet.naturalWidth/4,ch=sheet.naturalHeight/2;
-    const mask=bodyMasks[name].map(([x,y])=>[side===1?1-x:x,y]);
-    const key=maskedTexture(this.scene,`hero-${name}-${look}-${back}-${side}`,sheet,look*cw,back?ch:0,cw,ch,mask);
-    image.setTexture(key).setOrigin(.5,.5).setDisplaySize(w,h);image.setTint(item?.hue?Phaser.Display.Color.HSVToRGB(item.hue/360,.28,.95).color:0xffffff);
-  }
-  gear(image,id,w,h){
-    const item=ITEMS[id];image.setVisible(!!item);if(!item)return;
-    const sheet=this.sprites[item.atlas||'gear'],cols=item.atlas?4:6,rows=item.atlas?3:6,cw=sheet.naturalWidth/cols,ch=sheet.naturalHeight/rows;
-    const key=addTexture(this.scene,`gear-${id}`,sheet,[item.icon%cols*cw,Math.floor(item.icon/cols)*ch,cw,ch]);
-    image.setTexture(key).setDisplaySize(w,h).setOrigin(...(item.shield?[.5,.5]:(grips[id]||[.28,.78])));
-  }
-  sync({save,x,y,width=112,back=true,action='idle',dir='right',elapsed=0,clock=0,aspect=1}){
-    const w=width,h=w*4/3,item=ITEMS[save.equipment.weapon],targetPose=heroPose(action,dir,elapsed);
-    const key=`${action}:${dir}:${save.equipment.weapon}`;
-    if(this.actionKey!==key||elapsed<(this.lastElapsed??0)){
-      this.actionKey=key;this.fromRig=this.rig;this.fromPose=this.pose;
-      if(this.transition)this.scene.tweens.killTweensOf(this.transition);
-      this.transition={value:this.rig?0:1};
-      if(this.rig)this.scene.tweens.add({targets:this.transition,value:1,duration:75,ease:'Sine.easeOut'});
+function drawItem(ctx,sprites,id,x,y,w,h,angle=0,grip=null){
+  const item=ITEMS[id];if(!item)return;
+  const sheet=sprites[item.atlas||'gear'],cols=item.atlas?4:6,rows=item.atlas?3:6,cw=sheet.naturalWidth/cols,ch=sheet.naturalHeight/rows;
+  const origin=grip||(item.shield?[.5,.5]:ITEM_GRIPS[id]||[.28,.78]);
+  ctx.save();ctx.translate(x,y);ctx.rotate(angle);ctx.drawImage(sheet,item.icon%cols*cw,Math.floor(item.icon/cols)*ch,cw,ch,-w*origin[0],-h*origin[1],w,h);ctx.restore();
+}
+function tintedRegion(ctx,sheet,sx,sy,sw,sh,dx,dy,dw,dh,hue=0){
+  ctx.save();if(hue)ctx.filter=`hue-rotate(${hue}deg)`;ctx.drawImage(sheet,sx,sy,sw,sh,dx,dy,dw,dh);ctx.restore();
+}
+function sheetFrame(scene,key,sheet,row,column){
+  const existing=scene.textures.exists(key)?scene.textures.get(key):null;
+  if(!existing?.has(0)){
+    const texture=existing||scene.textures.addImage(key,sheet);const width=sheet.naturalWidth||sheet.width,height=sheet.naturalHeight||sheet.height;
+    for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+      const x=Math.round(c*width/8),y=Math.round(r*height/8);
+      texture.add(r*8+c,0,x,y,Math.round((c+1)*width/8)-x,Math.round((r+1)*height/8)-y);
     }
-    this.lastElapsed=elapsed;
-    const blend=this.transition.value,pose={...targetPose};
-    if(this.fromPose&&blend<1)for(const field of ['torso','head','leg','offleg','knee','offknee','x','y','rotation','alpha'])pose[field]=this.fromPose[field]+(targetPose[field]-this.fromPose[field])*blend;
-    const rig=characterRig({action,dir,elapsed,twoHanded:item?.hands===2,width:w,height:h,from:this.fromRig,blend});
-    this.root.setPosition(x+pose.x,y+pose.y+(action==='death'?0:Math.sin(clock/650)*.5)).setScale(back?1:-1,aspect);this.root.setAlpha(pose.alpha);const foot=h*.46;this.actor.setRotation(pose.rotation).setPosition(foot*Math.sin(pose.rotation),foot*(1-Math.cos(pose.rotation)));const hip=h*.08;for(const layer of [this.body,this.rearArms,this.rearEquipment])layer.setRotation(pose.torso).setPosition(hip*Math.sin(pose.torso),hip*(1-Math.cos(pose.torso)));
-    this.bodyPiece(this.torso,ITEMS[save.equipment.armor]?.look===3?'torsoMage':'torso','armor',save,w,h,back);this.bodyPiece(this.head,'head','helm',save,w,h,back);this.head.setOrigin(.5,.25).setPosition(0,-h*.25).setRotation(pose.head-pose.torso*.35);
-    const robe=ITEMS[save.equipment.pants]?.look===3;this.skirt.setVisible(robe);if(robe)this.bodyPiece(this.skirt,'skirt','pants',save,w,h,back);
-    for(const leg of this.legs){const {side,hip,thigh,knee,shin}=leg;hip.setPosition(side*w*.105,h*.09).setRotation(side===1?pose.leg:pose.offleg);knee.setPosition(side*w*.025,h*.17).setRotation(side===1?-pose.knee:-pose.offknee);this.bodyPiece(thigh,'thigh','pants',save,w,h,back,side);thigh.setPosition(-side*w*.105,-h*.09).setVisible(!robe);this.bodyPiece(shin,'shin','boots',save,w,h,back,side);shin.setPosition(-side*w*.13,-h*.26);}
-    this.cloak.setVisible(back&&!!save.equipment.cloak);if(this.cloak.visible){this.gear(this.cloak,save.equipment.cloak,w*.45,h*.55);this.cloak.setOrigin(.5,.5).setPosition(0,h*.01);}
-    this.neck.setVisible(!back&&!!save.equipment.neck);if(this.neck.visible){this.gear(this.neck,save.equipment.neck,w*.10,h*.10);this.neck.setOrigin(.5,.5).setPosition(0,-h*.21);}
-    const look=ITEMS[save.equipment.armor]?.look||0;
-    for(const arm of this.arms){
-      const parent=back?this.rearArms:this.body;if(arm.shoulder.parentContainer!==parent){arm.shoulder.parentContainer.remove(arm.shoulder);parent.add(arm.shoulder);}
-      // Drawing order is independent of the wrist hierarchy; origin remains the grip.
-      const gearParent=back?this.rearEquipment:this.frontEquipment;if(arm.gear.parentContainer!==gearParent){arm.gear.parentContainer.remove(arm.gear);gearParent.add(arm.gear);}
-      const solved=rig[arm.side],sh=rig.shoulders[arm.side];arm.shoulder.setPosition(sh.x,sh.y).setRotation(-solved.arm);arm.elbow.setPosition(0,rig.upper).setRotation(-solved.forearm);arm.wrist.setPosition(0,rig.lower);
-      for(const [image,col,length]of [[arm.upper,0,rig.upper],[arm.fore,1,rig.lower]]){
-        const rect=(back?rearArmRects:armRects)[look][col],key=addTexture(this.scene,`arm-${back?'back':'front'}-${look}-${col}`,this.sprites[back?'arms-back':'arms'],rect),ratio=length/(rect[3]*.80);
-        image.setTexture(key).setOrigin(.5,.10).setScale(ratio).setPosition(0,-length*.02).setFlipX(arm.side==='main');
-      }
-      const handRect=(back?rearArmRects:armRects)[look][2],handKey=addTexture(this.scene,`arm-${back?'back':'front'}-${look}-hand`,this.sprites[back?'arms-back':'arms'],handRect);
-      const armWorld=-solved.arm-solved.forearm;
-      // Wrist orientation follows the handle, independently of elbow bend.
-      const handAngle=arm.side==='main'?rig.weaponAngle+.65:rig.twoHanded?rig.weaponAngle+.65:0;
-      arm.wrist.setRotation(handAngle-armWorld);
-      arm.hand.setTexture(handKey).setOrigin(.52,.70).setDisplaySize(w*.10,h*.085).setFlipX(arm.side==='main');
-      const id=save.equipment[arm.side==='main'?'weapon':'offhand'],gearItem=ITEMS[id];
-      if(arm.side==='off'&&rig.twoHanded)arm.gear.setVisible(false);
-      else {this.gear(arm.gear,id,w*(gearItem?.hands===2?.55:.43),h*(arm.side==='main'?.52:.32));arm.gear.setPosition(solved.hand.x,solved.hand.y).setRotation(arm.side==='main'?rig.weaponAngle:handAngle);}
-    }
-    this.rig=rig;this.pose=pose;
+  }
+  return row*8+column;
+}
+function materialTexture(scene,sprites,save){
+  const art=equipmentArt(save),look=PLAYER_LOOKS[art.look],sourceKey=`fps-${art.weapon}-plate`;
+  if(look==='plate'&&!art.armorHue)return sourceKey;
+  const profile=materialProfile(save),maskLook=look==='plate'?'mage':look,key=`fps-equipped:${art.weapon}:${look}:${art.armorHue}`;
+  if(art.weapon===MATERIAL_PROFILES[profile]&&profile!=='heavy'&&!art.armorHue&&look!=='plate')return `fps-material-${profile}-${look}`;
+  if(scene.textures.exists(key))return key;
+  const source=sprites[sourceKey],reference=sprites[`fps-${MATERIAL_PROFILES[profile]}-plate`],skin=sprites[`fps-material-${profile}-${maskLook}`];
+  if(!source?.naturalWidth||!reference?.naturalWidth||!skin?.naturalWidth)return null;
+  const w=source.naturalWidth,h=source.naturalHeight,tex=scene.textures.createCanvas(key,w,h),ctx=tex.context;
+  ctx.imageSmoothingEnabled=false;ctx.drawImage(source,0,0);const actual=ctx.getImageData(0,0,w,h);
+  // Registered material reference frames recolor sleeve/glove pixels ONLY.
+  // Shape, finger overlap and weapon/handle contact remain the painted source.
+  ctx.drawImage(reference,0,0,w,h);const base=ctx.getImageData(0,0,w,h).data;
+  ctx.clearRect(0,0,w,h);ctx.drawImage(skin,0,0,w,h);const target=ctx.getImageData(0,0,w,h).data;
+  for(let i=0;i<actual.data.length;i+=4){
+    if(actual.data[i+3]<128||base[i+3]<128||target[i+3]<128)continue;
+    const localY=(Math.floor(i/4/w)%(h/8))/(h/8);if(localY<.3)continue;
+    const difference=Math.abs(base[i]-target[i])+Math.abs(base[i+1]-target[i+1])+Math.abs(base[i+2]-target[i+2]);
+    const materialColor=maskLook==='mage'?target[i+2]>target[i+1]*1.2:look==='rogue'?target[i+1]>target[i+2]*1.1:target[i]>target[i+2]*1.15||localY>.78;
+    if(difference<65||!materialColor)continue;
+    for(let channel=0;channel<3;channel++)if(look!=='plate')actual.data[i+channel]=Math.min(255,actual.data[i+channel]*Math.max(.35,Math.min(2.3,(target[i+channel]+12)/(base[i+channel]+12))));
+    if(art.armorHue){const color=Phaser.Display.Color.RGBToHSV(actual.data[i],actual.data[i+1],actual.data[i+2]);const rgb=Phaser.Display.Color.HSVToRGB((color.h+art.armorHue/360)%1,color.s,color.v);actual.data[i]=rgb.r;actual.data[i+1]=rgb.g;actual.data[i+2]=rgb.b;}
+  }
+  ctx.putImageData(actual,0,0);tex.refresh();return key;
+}
+export class FirstPersonPlayer {
+  constructor(scene,sprites){this.scene=scene;this.sprites=sprites;this.root=scene.add.container(0,0);this.offImage=scene.add.image(0,0,'__WHITE').setOrigin(0).setVisible(false);this.image=scene.add.image(0,0,'__WHITE').setOrigin(0).setVisible(false);this.shade=scene.add.graphics();this.root.add([this.offImage,this.image,this.shade]);}
+  show(image,key,row,column,aspect){
+    const canvasTexture=this.scene.textures.exists(key)?this.scene.textures.get(key):null;const sheet=this.sprites[key]||canvasTexture?.getSourceImage();if(!(sheet?.naturalWidth||sheet?.width)){image.setVisible(false);return;}
+    const frame=sheetFrame(this.scene,key,sheet,row,column),height=240*(sheet.naturalHeight||sheet.height)/(sheet.naturalWidth||sheet.width)*aspect;
+    image.setTexture(key,frame).setVisible(true).setPosition(0,400-height+6).setDisplaySize(240,height);
+  }
+  sync({save,action='idle',dir='right',elapsed=0,aspect=1}){
+    const frame=playerFrame(action,dir,elapsed),art=equipmentArt(save),look=PLAYER_LOOKS[art.look];this.frame=frame;this.art=art;
+    if(art.weapon){const key=materialTexture(this.scene,this.sprites,save);if(key)this.show(this.image,key,frame.row,frame.column,aspect);else this.image.setVisible(false);}else this.image.setVisible(false);
+    if(!art.twoHanded)this.show(this.offImage,`fps-offhand-${look}`,OFFHAND_ROWS[art.offhand]??7,offhandFrame(action==='slash'&&!art.weapon?'parry':action,elapsed),aspect);else this.offImage.setVisible(false);
+    // Complete painted hands AND their held equipment: only native frame changes.
+    // There is no weapon overlay, per-frame equipment transform, IK or joint rig.
+    this.root.moveTo(this.offImage,['guard','block'].includes(action)?1:0);
+    this.shade.clear();if(action==='death')this.shade.fillStyle(0x090710,Math.min(.82,elapsed/1000)).fillRect(0,0,240,400);
   }
   destroy(){this.root.destroy(true);}
+}
+export class EquipmentPortrait {
+  constructor(scene,sprites,save){this.scene=scene;this.sprites=sprites;this.image=scene.add.image(120,200,'__WHITE');this.sync(save);}
+  sync(save){
+    const signature=Object.values(save.equipment).join(':'),key=`portrait:${signature}`,sheet=this.sprites.portrait,cw=sheet.naturalWidth/4,ch=sheet.naturalHeight;
+    if(!this.scene.textures.exists(key)){
+      const tex=this.scene.textures.createCanvas(key,240,400),c=tex.context;c.imageSmoothingEnabled=false;
+      // Preserve the source figure's proportions within the portrait canvas.
+      const figureWidth=400*cw/ch;c.translate((240-figureWidth)/2,0);c.scale(figureWidth/240,1);
+      drawItem(c,this.sprites,save.equipment.cloak,120,210,215,305,0,[.5,.5]);
+      const art=equipmentArt(save),regions=[['helm',0,.18],['armor',.18,.54],['pants',.54,.76],['boots',.76,1]];
+      // Static complete figure regions, with identical pose/scale in all looks.
+      for(const [slot,start,end]of regions){const item=ITEMS[save.equipment[slot]],look=item?.look||0;tintedRegion(c,sheet,look*cw,start*ch,cw,(end-start)*ch,0,start*400,240,(end-start)*400,item?.hue||0);}
+      if(save.equipment.helm&&['frost-helm','wolf-helm'].includes(save.equipment.helm)){c.clearRect(0,0,240,64);drawItem(c,this.sprites,save.equipment.helm,120,35,110,85,0,[.5,.5]);}
+      drawItem(c,this.sprites,save.equipment.weapon,33,198,145,210,-.65);
+      drawItem(c,this.sprites,art.offhand,208,205,100,120,0,[.5,.5]);
+      for(const [x,width]of [[0,62],[188,52]])tintedRegion(c,sheet,art.look*cw+x/240*cw,185/400*ch,width/240*cw,35/400*ch,x,185,width,35,art.armorHue);
+      drawItem(c,this.sprites,save.equipment.neck,121,105,25,30,0,[.5,.5]);
+      for(const [slot,x]of [['ring1',30],['ring2',209]])drawItem(c,this.sprites,save.equipment[slot],x,195,11,12,0,[.5,.5]);
+      tex.refresh();
+    }
+    this.image.setTexture(key).setDisplaySize(240,400);this.equipment={...save.equipment};
+  }
 }
 
 export function createPhaserRenderer({canvas,background,sprites,tick,getState}){
   let activeScene,hero,previewGame=null,enemyImages=[],enemyKey='',dangerAura;
   class CombatScene extends Phaser.Scene {
     constructor(){super('Combat');}
-    create(){activeScene=this;this.textures.addCanvas('background',background);this.backdrop=this.add.image(0,0,'background').setOrigin(0).setDisplaySize(480,800);const world=this.add.container(0,0).setScale(2);hero=new PhaserHero(this,sprites);world.add(hero.root);this.world=world;dangerAura=this.add.graphics();world.addAt(dangerAura,0);enemyImages=[this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false),this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false)];world.addAt(enemyImages[0],1);world.addAt(enemyImages[1],2);this.cameras.main.setBackgroundColor('#171522');}
-    update(now){if(!hero||!getState().loaded)return;tick(now);const state=getState();this.world.setVisible(state.phase!=='home');if(state.phase==='home')return;this.tweens.timeScale=state.paused?0:1;hero.sync(state.hero);}
+    create(){activeScene=this;this.textures.addCanvas('background',background);this.backdrop=this.add.image(0,0,'background').setOrigin(0).setDisplaySize(480,800);const world=this.add.container(0,0).setScale(2);hero=new FirstPersonPlayer(this,sprites);world.add(hero.root);this.world=world;dangerAura=this.add.graphics();world.addAt(dangerAura,0);enemyImages=[this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false),this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false)];world.addAt(enemyImages[0],1);world.addAt(enemyImages[1],2);this.cameras.main.setBackgroundColor('#171522');}
+    update(now){if(!hero)return;const initial=getState();this.world.setVisible(initial.phase!=='home');if(!initial.loaded){hero.root.setVisible(false);this.tweens.timeScale=0;return;}hero.root.setVisible(true);tick(now);const state=getState();this.world.setVisible(state.phase!=='home');if(state.phase==='home')return;this.tweens.timeScale=state.paused?0:1;hero.sync(state.hero);}
   }
   const game=new Phaser.Game({type:Phaser.CANVAS,canvas,width:480,height:800,transparent:false,antialias:false,pixelArt:true,audio:{noAudio:true},scene:CombatScene,banner:false,render:{roundPixels:false},fps:{target:60}});
   return {
@@ -130,7 +119,7 @@ export function createPhaserRenderer({canvas,background,sprites,tick,getState}){
     preview(canvas,save){
       if(previewGame){previewGame.destroy(false);previewGame=null;}
       class PreviewScene extends Phaser.Scene {
-        create(){this.hero=new PhaserHero(this,sprites);this.hero.sync({save,x:120,y:200,width:230,back:false});}
+        create(){this.hero=new EquipmentPortrait(this,sprites,save);}
       }
       previewGame=new Phaser.Game({type:Phaser.CANVAS,canvas,width:240,height:400,transparent:true,antialias:false,pixelArt:true,audio:{noAudio:true},scene:PreviewScene,banner:false});
     },
