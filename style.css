@@ -39,3 +39,6 @@
 @media(max-height:740px){.hallTitle{padding-top:4vh}.hallStory{margin-top:15vh}.homeScreen{padding-inline:18px}.homeNav button{padding:9px 2px}}
 
 @media(max-width:350px){#heroPreview{width:160px}}
+
+#attackArrow[hidden]{display:none}
+.telegraph[data-directional="false"] .attackBadge{border-color:#ff4057}

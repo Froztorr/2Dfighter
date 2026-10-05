@@ -1,1 +1,17 @@
-{"name":"emberblade","version":"0.1.0","private":true,"type":"module","scripts":{"test":"node --test test.mjs","start":"node server.mjs"}}
+{
+  "name": "emberblade",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test.mjs",
+    "start": "node server.mjs",
+    "test:browser": "node tools/browser-animation.mjs"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.58.2"
+  }
+}

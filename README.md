@@ -1,6 +1,6 @@
 # Emberblade — 2Dfighter
 
-ตัวอย่าง mobile portrait RPG แบบ pixel art วาดด้วย Canvas ไม่มี runtime dependency
+เกม mobile portrait RPG แบบ pixel art ใช้ Phaser 3.90 สำหรับ game loop, Scene, sprite, Container และ tween ของอนิเมชั่น ตัว Phaser อยู่ใน vendor/ จึงไม่ต้องโหลด runtime จาก CDN
 
 ## เล่นบนคอมพิวเตอร์
 
@@ -8,7 +8,7 @@
 
 ## เล่นบนมือถือ
 
-รัน `npm start -- --lan` แล้วเปิด `http://<IP ของคอมใน Wi-Fi>:4173` บนมือถือในเครือข่ายเดียวกัน (เครื่องต้องอนุญาต inbound port 4173) หยุด server ด้วย Ctrl+C สามารถนำ index.html, style.css, app.js, core.mjs และโฟลเดอร์ assets ไปวางบน static hosting ได้โดยตรง
+รัน `npm start -- --lan` แล้วเปิด `http://<IP ของคอมใน Wi-Fi>:4173` บนมือถือในเครือข่ายเดียวกัน (เครื่องต้องอนุญาต inbound port 4173) หยุด server ด้วย Ctrl+C สามารถนำ index.html, style.css, app.js, core.mjs, hero-rig.mjs, phaser-renderer.mjs และโฟลเดอร์ assets กับ vendor ไปวางบน static hosting ได้โดยตรง
 
 ## Main menu and combat feel
 
@@ -21,7 +21,7 @@
 - ลากกลางจอเพื่อเริ่มฟันทันทีเมื่อผ่านระยะ 18 logical pixels ซ้าย/ขวา/ขึ้น/ลง; desktop ใช้ arrow keys
 - ศัตรูแสดงลูกศรก่อนโจมตี: ฟันสวนทิศลูกศรในช่วง 450 ms สุดท้ายเพื่อ parry; 170 ms สุดท้ายเป็น perfect และ stun 2.1 วินาที
 - Dodge ด้วยปุ่มลูกศรด้านล่างขวา หรือ Shift+arrow; หลบตามทิศลูกศรศัตรู ใช้ timing เดียวกับ parry มี cooldown 650 ms
-- ไอคอนกลางตัวศัตรูพร้อมลูกศร: ดาบแดง = parry/dodge/block, โล่ฟ้า = heavy ต้อง dodge/block, กะโหลกดำแดง = sweep ต้อง block เท่านั้น มีข้อความกำกับ
+- ท่าปกติมีลูกศรสำหรับ parry/dodge/block; ท่าโล่ heavy และกะโหลก sweep ต้อง BLOCK เท่านั้น ไม่มีลูกศร และมีออร่าแดงเต้นรอบศัตรู
 - ศัตรูตั้งรับลดดาเมจ 84% ที่ LV1 เพิ่ม 4% ต่อเลเวลจนถึง 100%; parry/dodge เปิดช่องสวน 600–1095 ms ตามเลเวล, perfect เปิด 2.1 วินาที, บล็อกด้วยโล่เปิด 550 ms และ ward เปิด 900 ms
 - กดปุ่มโล่ด้านล่างซ้ายค้าง หรือกด Space ค้าง เพื่อบล็อกทุกทิศ/ทุกประเภท เสีย stamina 24/42/34 ตามประเภท; ถ้าเหลือไม่พอหรือเหลือ 0 จะเสียเลือดและสตั้น 1.4 วินาที โจมตี/หลบ/ร่ายเวท/บล็อกไม่ได้ระหว่างสตั้น
 - Stamina สูงสุด 100 ฟื้น 16 ต่อวินาทีเมื่อปล่อยโล่ หรือ 4 เมื่อถือโล่ เริ่มฟื้น 0.8 วินาทีหลังรับแรงปะทะ กำลังบล็อกจะฟันหรือร่ายเวทไม่ได้
@@ -35,9 +35,19 @@
 - Forge ซื้อของ, Vigor/Edge เพิ่ม stat, replay ด่านที่ปลดล็อกได้; เซฟเก่าจะย้ายแหวนเดิมไปช่องแรกโดยรักษาอุปกรณ์และทองเดิม
 - บันทึกทอง/อุปกรณ์/upgrade/ด่านที่ปลดล็อกใน localStorage (`emberblade-v1`) ไม่บันทึก combat กลางห้อง เปิดเมนูหรือสลับแท็บจะ pause
 
+## Phaser character animation
+
+ฉากต่อสู้แสดงผู้เล่นจากด้านหลัง หันหน้าเข้าหาศัตรูเสมอ ใช้ภาพแขน/มือด้านหลังใน `assets/arms-back.png` และให้ลำตัวบังแขนที่ยื่นไปด้านหน้าหาศัตรู ไม่วาดแขนพาดทับแผ่นหลัง หน้าสวมอุปกรณ์ใช้ภาพด้านหน้าและสลับด้านตามกายวิภาคเพื่อให้อาวุธอยู่ในมือข้างเดียวกัน
+
+ตัวละครใช้ Phaser Container เป็นลำดับไหล่ → ข้อศอก → ข้อมือ พร้อมภาพแขน/กำมือที่สร้างแยกใหม่ใน `assets/arms.png` ไม่ตัดชิ้นไหล่จากภาพเต็มตัวมาหมุน ส่วนหัว ลำตัว และขาใช้ภาพเดิมเพื่อรักษารูปลักษณ์ชุด อาวุธตามตำแหน่งข้อมือผ่าน transform แต่แยกชั้นวาด: ฉากต่อสู้วาดอาวุธหลังแขน ขา และลำตัว; หน้าสวมอุปกรณ์วาดใต้แขน/มือ อาวุธสองมือวางจุดจับห่างกันตามแนวด้ามและแก้ IK ของทั้งสองแขนร่วมกัน โดยคงความยาวกระดูกและจำกัดการพับข้อศอก
+
+Phaser คุม frame loop และ tween เมื่อเปลี่ยน action/ทิศ รวมถึง sprite ของศัตรูและการเกลี่ยเฟรมโจมตี หน้าสวมอุปกรณ์ใช้ Phaser Scene อีกตัวและ renderer ตัวเดียวกับฉากต่อสู้ พื้นหลังและเอฟเฟกต์เดิมเป็น CanvasTexture ใน Scene
+
 ## Verification
 
 `npm test` ตรวจทิศและจังหวะป้องกัน, gestures, เงิน/อุปกรณ์, save ที่เสียหาย และ game loop จริงผ่านทั้ง 6 ด่าน รวม stun, spell cooldown, ward, pause และ retry หลังตาย มี simulation 60 fps ใช้อุปกรณ์เริ่มต้นและอินพุตป้องกันตามเวลาของ scheduler จริงจนจบทุกด่าน รวมตรวจ daily rollover และการรับรางวัลซ้ำ
+
+`npm ci && npm run test:browser` ตรวจใน Chromium จริง (กำหนด `CHROMIUM_PATH` ได้; default `/usr/bin/chromium`) ตรวจว่าใช้ Phaser ทั้งสองหน้าจอ จุดข้อมือของ native sprite ตรงกับ IK ภาพด้านหลัง 54 ท่า / 108 แขน พร้อมตรวจ rear atlas และการบังของลำตัว การโจมตีศัตรู 28 แบบ และ cue BLOCK ONLY ที่ซ่อนลูกศร/แสดงออร่าแดง รวมถึงท่าตายก่อนเปิดหน้าผลแพ้ เก็บภาพตรวจไว้ใน `artifacts/` รวมกรณี Crown of Winter + Ember Staff + Trail Boots จากภาพรายงานปัญหา
 
 ## Campaign expansion / daily / camp
 
@@ -58,3 +68,5 @@
 เพิ่ม guard ready/impact 2 เฟรมต่อศัตรู, equipment atlas 36 ไอคอน (รวม potion), player atlas front/back 4 ชุด ตรวจ RGBA/ช่องภาพด้วย `python tools/check-assets.py` (ต้องมี Pillow)
 
 นี่เป็น single-player sample ใช้ geometric gesture recognition สำหรับ 3 รูน ความสมดุลและ gesture ยังต้องทดสอบกับนิ้วบนมือถือจริง; ไม่มี account หรือ cloud save
+
+ท่าผู้เล่นแยก idle, ฟันสี่ทิศ, guard, รับแรง block, parry, dodge, hurt, stun, death, cast, ward, heal, victory และ walk โดยท่าตายเริ่มทรุดแล้วล้มรอบจุดเท้า ส่วน stun ค้างจนหมดเวลาสถานะ ไม่รีเซ็ตเองเป็น idle

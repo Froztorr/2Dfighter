@@ -10,14 +10,14 @@ for path in sorted((Path(__file__).resolve().parents[1] / 'assets').glob('*.png'
         alpha = image.getchannel('A')
         assert alpha.getextrema()[0] == 0 and alpha.getextrema()[1] >= 250, f'{path.name}: missing transparent background'
         width, height = image.size
-        cols, rows = {'gear':(6,6),'hero':(4,2),'guards':(4,2),'relics':(4,3),'frost':(4,6),'spider':(4,6),'demon':(4,6)}.get(path.stem,(4,5))
+        cols, rows = {'arms-back':(3,4),'arms':(3,4),'gear':(6,6),'hero':(4,2),'guards':(4,2),'relics':(4,3),'frost':(4,6),'spider':(4,6),'demon':(4,6)}.get(path.stem,(4,5))
         cells = []
         for row in range(rows):
             for col in range(cols):
                 cell = alpha.crop((round(col*width/cols), round(row*height/rows), round((col+1)*width/cols), round((row+1)*height/rows)))
                 assert cell.getbbox(), f'{path.name}: empty frame {row}/{col}'
                 cells.append(cell.getbbox())
-        if path.stem in ['gear','hero','guards','relics']:
+        if path.stem in ['arms-back','arms','gear','hero','guards','relics']:
             assert alpha.histogram()[0] > width*height*.25, f'{path.name}: excessive background'
             print(f'{path.name}: {width}x{height}, RGBA, {cols*rows} nonempty cells')
             continue
