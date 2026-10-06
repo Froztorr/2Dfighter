@@ -1,8 +1,9 @@
+import { PLAYER_SHEETS } from './fps-player.mjs';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 const root=process.cwd();
-const publicFiles = new Set(['/index.html','/style.css','/app.js','/core.mjs','/hero-rig.mjs','/phaser-renderer.mjs','/vendor/phaser.min.js',...['arms','arms-back','hall','brute','lizard','wraith','knight','gear','hero','guards','frost','spider','demon','relics'].map(name=>`/assets/${name}.png`)]);
+const publicFiles = new Set(['/index.html','/style.css','/app.js','/core.mjs','/fps-player.mjs','/phaser-renderer.mjs','/vendor/phaser.min.js',...['hall','brute','lizard','wraith','knight','gear','guards','frost','spider','demon','relics','portrait',...PLAYER_SHEETS].map(name=>`/assets/${name}.png`)]);
 createServer(async(req,res)=>{
   try {
     const url = new URL(req.url,'http://localhost');
