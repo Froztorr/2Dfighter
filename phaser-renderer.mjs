@@ -1,5 +1,6 @@
 import { ITEMS } from './core.mjs';
-import { playerFrame, equipmentArt, PLAYER_LOOKS, MATERIAL_PROFILES, materialProfile, OFFHAND_ROWS, offhandFrame, ITEM_GRIPS } from './fps-player.mjs';
+import { equipmentArt, ITEM_GRIPS } from './fps-player.mjs';
+import { samplePlayerRig, drawPlayerRig } from './player-rig.mjs';
 
 function addTexture(scene,key,sheet,rect){
   if(scene.textures.exists(key))return key;
@@ -14,59 +15,30 @@ function drawItem(ctx,sprites,id,x,y,w,h,angle=0,grip=null){
 function tintedRegion(ctx,sheet,sx,sy,sw,sh,dx,dy,dw,dh,hue=0){
   ctx.save();if(hue)ctx.filter=`hue-rotate(${hue}deg)`;ctx.drawImage(sheet,sx,sy,sw,sh,dx,dy,dw,dh);ctx.restore();
 }
-function sheetFrame(scene,key,sheet,row,column){
-  const existing=scene.textures.exists(key)?scene.textures.get(key):null;
-  if(!existing?.has(0)){
-    const texture=existing||scene.textures.addImage(key,sheet);const width=sheet.naturalWidth||sheet.width,height=sheet.naturalHeight||sheet.height;
-    for(let r=0;r<8;r++)for(let c=0;c<8;c++){
-      const x=Math.round(c*width/8),y=Math.round(r*height/8);
-      texture.add(r*8+c,0,x,y,Math.round((c+1)*width/8)-x,Math.round((r+1)*height/8)-y);
-    }
-  }
-  return row*8+column;
-}
-function materialTexture(scene,sprites,save){
-  const art=equipmentArt(save),look=PLAYER_LOOKS[art.look],sourceKey=`fps-${art.weapon}-plate`;
-  if(look==='plate'&&!art.armorHue)return sourceKey;
-  const profile=materialProfile(save),maskLook=look==='plate'?'mage':look,key=`fps-equipped:${art.weapon}:${look}:${art.armorHue}`;
-  if(art.weapon===MATERIAL_PROFILES[profile]&&profile!=='heavy'&&!art.armorHue&&look!=='plate')return `fps-material-${profile}-${look}`;
-  if(scene.textures.exists(key))return key;
-  const source=sprites[sourceKey],reference=sprites[`fps-${MATERIAL_PROFILES[profile]}-plate`],skin=sprites[`fps-material-${profile}-${maskLook}`];
-  if(!source?.naturalWidth||!reference?.naturalWidth||!skin?.naturalWidth)return null;
-  const w=source.naturalWidth,h=source.naturalHeight,tex=scene.textures.createCanvas(key,w,h),ctx=tex.context;
-  ctx.imageSmoothingEnabled=false;ctx.drawImage(source,0,0);const actual=ctx.getImageData(0,0,w,h);
-  // Registered material reference frames recolor sleeve/glove pixels ONLY.
-  // Shape, finger overlap and weapon/handle contact remain the painted source.
-  ctx.drawImage(reference,0,0,w,h);const base=ctx.getImageData(0,0,w,h).data;
-  ctx.clearRect(0,0,w,h);ctx.drawImage(skin,0,0,w,h);const target=ctx.getImageData(0,0,w,h).data;
-  for(let i=0;i<actual.data.length;i+=4){
-    if(actual.data[i+3]<128||base[i+3]<128||target[i+3]<128)continue;
-    const localY=(Math.floor(i/4/w)%(h/8))/(h/8);if(localY<.3)continue;
-    const difference=Math.abs(base[i]-target[i])+Math.abs(base[i+1]-target[i+1])+Math.abs(base[i+2]-target[i+2]);
-    const materialColor=maskLook==='mage'?target[i+2]>target[i+1]*1.2:look==='rogue'?target[i+1]>target[i+2]*1.1:target[i]>target[i+2]*1.15||localY>.78;
-    if(difference<65||!materialColor)continue;
-    for(let channel=0;channel<3;channel++)if(look!=='plate')actual.data[i+channel]=Math.min(255,actual.data[i+channel]*Math.max(.35,Math.min(2.3,(target[i+channel]+12)/(base[i+channel]+12))));
-    if(art.armorHue){const color=Phaser.Display.Color.RGBToHSV(actual.data[i],actual.data[i+1],actual.data[i+2]);const rgb=Phaser.Display.Color.HSVToRGB((color.h+art.armorHue/360)%1,color.s,color.v);actual.data[i]=rgb.r;actual.data[i+1]=rgb.g;actual.data[i+2]=rgb.b;}
-  }
-  ctx.putImageData(actual,0,0);tex.refresh();return key;
-}
+let rigSerial=0;
 export class FirstPersonPlayer {
-  constructor(scene,sprites){this.scene=scene;this.sprites=sprites;this.root=scene.add.container(0,0);this.offImage=scene.add.image(0,0,'__WHITE').setOrigin(0).setVisible(false);this.image=scene.add.image(0,0,'__WHITE').setOrigin(0).setVisible(false);this.shade=scene.add.graphics();this.root.add([this.offImage,this.image,this.shade]);}
-  show(image,key,row,column,aspect){
-    const canvasTexture=this.scene.textures.exists(key)?this.scene.textures.get(key):null;const sheet=this.sprites[key]||canvasTexture?.getSourceImage();if(!(sheet?.naturalWidth||sheet?.width)){image.setVisible(false);return;}
-    const frame=sheetFrame(this.scene,key,sheet,row,column),height=240*(sheet.naturalHeight||sheet.height)/(sheet.naturalWidth||sheet.width)*aspect;
-    image.setTexture(key,frame).setVisible(true).setPosition(0,400-height+6).setDisplaySize(240,height);
+  constructor(scene,sprites){
+    this.scene=scene;this.sprites=sprites;this.root=scene.add.container(0,0);
+    this.key=`player-rig:${rigSerial++}`;this.texture=scene.textures.createCanvas(this.key,240,400);
+    this.buffer=document.createElement('canvas');this.buffer.width=240;this.buffer.height=400;this.bufferContext=this.buffer.getContext('2d',{willReadFrequently:true});
+    this.image=scene.add.image(0,0,this.key).setOrigin(0).setDisplaySize(240,400);
+    this.shade=scene.add.graphics();this.root.add([this.image,this.shade]);
   }
-  sync({save,action='idle',dir='right',elapsed=0,aspect=1}){
-    const frame=playerFrame(action,dir,elapsed),art=equipmentArt(save),look=PLAYER_LOOKS[art.look];this.frame=frame;this.art=art;
-    if(art.weapon){const key=materialTexture(this.scene,this.sprites,save);if(key)this.show(this.image,key,frame.row,frame.column,aspect);else this.image.setVisible(false);}else this.image.setVisible(false);
-    if(!art.twoHanded)this.show(this.offImage,`fps-offhand-${look}`,OFFHAND_ROWS[art.offhand]??7,offhandFrame(action==='slash'&&!art.weapon?'parry':action,elapsed),aspect);else this.offImage.setVisible(false);
-    // Complete painted hands AND their held equipment: only native frame changes.
-    // There is no weapon overlay, per-frame equipment transform, IK or joint rig.
-    this.root.moveTo(this.offImage,['guard','block'].includes(action)?1:0);
-    this.shade.clear();if(action==='death')this.shade.fillStyle(0x090710,Math.min(.82,elapsed/1000)).fillRect(0,0,240,400);
+  sync(state){
+    this.pose=samplePlayerRig(state);this.art=this.pose.art;
+    const c=this.bufferContext;drawPlayerRig(c,this.pose);
+    const pixels=c.getImageData(0,0,240,400);
+    // Native 240 × 400 pixels, binary silhouettes and 5-bit color channels.
+    // This removes subpixel edge blends after rotating rig parts.
+    for(let i=0;i<pixels.data.length;i+=4){
+      if(!pixels.data[i+3])continue;
+      pixels.data[i+3]=pixels.data[i+3]<128*this.pose.alpha?0:Math.round(255*this.pose.alpha);
+      for(let channel=0;channel<3;channel++)pixels.data[i+channel]=Math.round(pixels.data[i+channel]/8)*8;
+    }
+    this.texture.context.putImageData(pixels,0,0);this.texture.refresh();
+    this.shade.clear();if(state.action==='death')this.shade.fillStyle(0x090710,Math.min(.82,state.elapsed/1000)).fillRect(0,0,240,400);
   }
-  destroy(){this.root.destroy(true);}
+  destroy(){this.root.destroy(true);this.scene.textures.remove(this.key);}
 }
 export class EquipmentPortrait {
   constructor(scene,sprites,save){this.scene=scene;this.sprites=sprites;this.image=scene.add.image(120,200,'__WHITE');this.sync(save);}

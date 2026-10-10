@@ -37,10 +37,8 @@ export const PLAYER_WEAPONS=Object.keys(ITEMS).filter(id=>ITEMS[id].slot==='weap
 export const MATERIAL_PROFILES={blade:'iron-sword',staff:'ember-staff',heavy:'greatsword'};
 export function materialProfile(save){const item=ITEMS[save.equipment.weapon];return item?.hands===2?(item.magic?'staff':'heavy'):'blade';}
 export const PLAYER_SHEETS=[...PLAYER_WEAPONS.map(id=>`fps-${id}-plate`),...PLAYER_LOOKS.map(look=>`fps-offhand-${look}`),...Object.keys(MATERIAL_PROFILES).flatMap(profile=>PLAYER_LOOKS.filter(look=>look!=='plate').map(look=>`fps-material-${profile}-${look}`))];
-export function playerAssets(save){
- const art=equipmentArt(save),look=PLAYER_LOOKS[art.look],profile=materialProfile(save);
- return [...(art.weapon?[`fps-${art.weapon}-plate`]:[]),...(!art.twoHanded?[`fps-offhand-${look}`]:[]),...((look!=='plate'||art.armorHue)&&art.weapon?[`fps-${MATERIAL_PROFILES[profile]}-plate`,`fps-material-${profile}-${look==='plate'?'mage':look}`]:[])];
-}
+// Combat uses a procedural rig; historical sheets remain available as source art.
+export function playerAssets(){return [];}
 export const OFFHAND_ROWS={'wood-shield':0,'steel-shield':1,'guardian-shield':2,'frost-shield':3,'parry-dagger':4,'assassin-dagger':5,'spider-claw':6};
 export function offhandFrame(action,elapsed){
  if(action==='guard')return 2;

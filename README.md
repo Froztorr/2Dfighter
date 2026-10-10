@@ -14,7 +14,7 @@
 
 เริ่มที่โถงหลัก → เลือกด่าน → ออกเดินทาง แผนที่แสดงด่านที่ล็อก/ปลดล็อก ดาวสูงสุด และของดรอป พร้อม EXP/ความคืบหน้ารวม หน้าตัวละครจัดเป็น folio ธีมหินและทองเหลืองพร้อมแท่นตัวละคร เข้าคลังอาวุธ/ภารกิจ/แคมป์ได้จากโถง กลับโถงระหว่างสู้จะยุติรอบปัจจุบัน โดยของที่ได้รับแล้วไม่หาย
 
-ฉากต่อสู้เป็น first person เห็นเฉพาะมือและอาวุธที่ถือ ใช้ภาพวาดมือจับอาวุธครบในแต่ละเฟรม ไม่หมุนข้อต่อหรือวางอาวุธทับกำมือ การฟันมีง้าง–ปะทะ–คืนท่า 4 ทิศ ดาเมจเกิดที่ 110 ms; parry ตอบสนองทันที มี hitstop, enemy recoil และเอฟเฟกต์ตามทิศ ปิด camera shake ตาม prefers-reduced-motion
+ฉากต่อสู้เป็น first person เห็นมือและอาวุธที่ถือ ใช้ 2D joint rig วาดแขน ข้อมือ ถุงมือ และอาวุธติดจุดจับเดียวกัน ไม่ตัดเฟรมจาก sprite sheet ผู้เล่น การฟันมีง้าง–ปะทะ–คืนท่า 4 ทิศ ดาเมจเกิดที่ 110 ms; parry ตอบสนองทันที มี hitstop, enemy recoil และเอฟเฟกต์ตามทิศ ปิด camera shake และ idle bob ตาม prefers-reduced-motion
 
 ## Controls
 
@@ -35,9 +35,9 @@
 - Forge ซื้อของ, Vigor/Edge เพิ่ม stat, replay ด่านที่ปลดล็อกได้; เซฟเก่าจะย้ายแหวนเดิมไปช่องแรกโดยรักษาอุปกรณ์และทองเดิม
 - บันทึกทอง/อุปกรณ์/upgrade/ด่านที่ปลดล็อกใน localStorage (`emberblade-v1`) ไม่บันทึก combat กลางห้อง เปิดเมนูหรือสลับแท็บจะ pause
 
-## Phaser first-person animation
+## Phaser first-person rig animation
 
-`fps-player.mjs` กำหนดเฟรมและจังหวะ; `phaser-renderer.mjs` เล่น native Phaser Image frames จาก atlas 8 × 8 อาวุธหลัก 13 แบบวาดพร้อมมือที่จับด้าม อาวุธสองมือวาดสองมือในภาพเดียว มือรองมีโล่ด้านในพร้อมด้าม/สายรัด มีด และมือว่าง แยกชุดผ้า/เกราะ/หนัง/เมจ ไม่ใช้ shoulder/elbow rig หรือ tween หมุนอาวุธผู้เล่น
+`player-rig.mjs` samples continuous wrist poses and draws jointed forearms, cuffs, palms and fingers onto a native 240 × 400 pixel Phaser texture. Hard pixel silhouettes, 5-bit color channels, stepped lighting, blade bevels, segmented gauntlets and shaded wood/metal surfaces give the equipment a 16-bit look with dimensional shading. All 13 main weapons and seven offhands have explicit geometry; fingers render over the handle. Two-handed grips share the same weapon transform, so the support hand cannot drift away. Shields show their inner surface, straps and handle. Armor selects cloth, plate, leather or mage gloves and sleeves; there is no separate glove inventory slot. Four slash paths have contact at 110 ms, matching gameplay damage. Guard, recoil, parry, dodge, spells, stun, victory and death use the same rig. The old `fps-*.png` atlases are retained as source art but are not loaded for combat. The equipment portrait and enemy artwork remain unchanged.
 
 แถวเฟรมคือ idle, ฟันขวา, ฟันซ้าย, ฟันขึ้น, ฟันลง, guard/block, parry/cast และ hurt/death การหลบใช้เฟรมลดมือหลบ การสตั้นค้างสลับเฟรมเสียหลัก การตายลดอาวุธและจอมืดก่อนเปิดผลแพ้ ชุดสีพิเศษเปลี่ยนสีวัสดุบน atlas โดยคง alpha และตำแหน่งมือ/ด้ามเดิม หมวกและรองเท้าดูได้ในหน้าสวมอุปกรณ์เพราะมุมมองต่อสู้ไม่เห็นส่วนเหล่านี้
 

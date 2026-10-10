@@ -238,3 +238,41 @@ test('first-person frames preserve directional contact and terminal states',asyn
   for(const [armor,look]of [[null,0],['scale-mail',1],['leather-vest',2],['mage-robe',3]]){core.equip(save,'armor',armor);assert.equal(equipmentArt(save).look,look);}
   core.equip(save,'weapon','ember-staff');assert.equal(equipmentArt(save).twoHanded,true);assert.equal(equipmentArt(save).offhand,null);
 });
+
+test('combat rig keeps grips attached through every action and equipment combination',async()=>{
+ const {samplePlayerRig,gripPoint,WEAPON_STYLES}=await import('./player-rig.mjs');
+ const save=core.newSave();save.owned=Object.keys(core.ITEMS);
+ assert.deepEqual(fps.playerAssets(save),[],'combat should not load generated animation atlases');
+ for(const weapon of fps.PLAYER_WEAPONS){
+  assert.ok(WEAPON_STYLES[weapon],`missing weapon geometry: ${weapon}`);
+  save.equipment.weapon=weapon;
+  for(const offhand of [null,...Object.keys(core.ITEMS).filter(id=>core.ITEMS[id].slot==='offhand')]){
+   save.equipment.offhand=offhand;
+   for(const action of Object.keys(core.HERO_ACTIONS))for(const dir of Object.keys(core.DIR))for(let elapsed=0;elapsed<1200;elapsed+=17){
+    const pose=samplePlayerRig({save,action,dir,elapsed});
+    for(const side of ['left','right'])for(const joint of ['shoulder','elbow','wrist'])assert.ok(Object.values(pose[side][joint]).every(Number.isFinite));
+    assert.deepEqual(pose.right.wrist,gripPoint(pose.grip));
+    assert.deepEqual(pose.left.wrist,pose.art.twoHanded?gripPoint(pose.grip,0,25):gripPoint(pose.off));
+    if(pose.art.twoHanded)assert.equal(pose.art.offhand,null);
+   }
+  }
+ }
+});
+test('rig strikes interpolate continuously, contact at 110 ms and settle into rest',async()=>{
+ const {samplePlayerRig}=await import('./player-rig.mjs');const save=core.newSave();
+ const samples=[];
+ for(const dir of ['left','right','up','down']){
+  const sample=elapsed=>samplePlayerRig({save,action:'slash',dir,elapsed});
+  assert.equal(sample(110).contact,true);assert.equal(sample(109).contact,false);
+  samples.push(sample(110).grip);
+  for(let elapsed=1;elapsed<=301;elapsed++){
+   const a=sample(elapsed-1).grip,b=sample(elapsed).grip;
+   assert.ok(Math.hypot(a[0]-b[0],a[1]-b[1])<5,`${dir} discontinuity at ${elapsed}`);
+   assert.ok(Math.abs(a[2]-b[2])<.1);
+  }
+ }
+ assert.equal(new Set(samples.map(JSON.stringify)).size,4);
+ assert.equal(samplePlayerRig({save,action:'death',elapsed:2000}).alpha,0);
+ const idle=elapsed=>samplePlayerRig({save,elapsed,reducedMotion:true}).grip;
+ assert.deepEqual(idle(0),idle(500));
+});

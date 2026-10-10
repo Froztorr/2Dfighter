@@ -359,6 +359,6 @@ function loop(now){let dt=Math.min(50,now-last);last=now;updateMini(now);if(now>
 const renderer=createPhaserRenderer({canvas,background,sprites,tick:loop,getState:()=>{
   ensurePlayerArt();
   const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
-  return {phase,paused,loaded:spritesLoaded===Object.keys(sprites).length,hero:{save,...currentHero(),clock:time,aspect}};
+  return {phase,paused,loaded:spritesLoaded===Object.keys(sprites).length,hero:{save,...currentHero(),clock:time,aspect,reducedMotion}};
 }});
 ensurePlayerArt();renderHome();hud();
