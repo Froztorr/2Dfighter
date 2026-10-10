@@ -1,6 +1,6 @@
 import { ITEMS } from './core.mjs';
 import { equipmentArt, ITEM_GRIPS } from './fps-player.mjs';
-import { samplePlayerRig, drawPlayerRig } from './player-rig.mjs';
+import { Player3D } from './player-3d.mjs';
 
 function addTexture(scene,key,sheet,rect){
   if(scene.textures.exists(key))return key;
@@ -19,26 +19,18 @@ let rigSerial=0;
 export class FirstPersonPlayer {
   constructor(scene,sprites){
     this.scene=scene;this.sprites=sprites;this.root=scene.add.container(0,0);
-    this.key=`player-rig:${rigSerial++}`;this.texture=scene.textures.createCanvas(this.key,240,400);
-    this.buffer=document.createElement('canvas');this.buffer.width=240;this.buffer.height=400;this.bufferContext=this.buffer.getContext('2d',{willReadFrequently:true});
-    this.image=scene.add.image(0,0,this.key).setOrigin(0).setDisplaySize(240,400);
+    this.key=`player-3d:${rigSerial++}`;this.texture=scene.textures.createCanvas(this.key,480,800);
+    this.model=new Player3D();this.image=scene.add.image(0,0,this.key).setOrigin(0).setDisplaySize(240,400);
     this.shade=scene.add.graphics();this.root.add([this.image,this.shade]);
+    scene.events.once('shutdown',()=>this.destroy());
   }
   sync(state){
-    this.pose=samplePlayerRig(state);this.art=this.pose.art;
-    const c=this.bufferContext;drawPlayerRig(c,this.pose);
-    const pixels=c.getImageData(0,0,240,400);
-    // Native 240 × 400 pixels, binary silhouettes and 5-bit color channels.
-    // This removes subpixel edge blends after rotating rig parts.
-    for(let i=0;i<pixels.data.length;i+=4){
-      if(!pixels.data[i+3])continue;
-      pixels.data[i+3]=pixels.data[i+3]<128*this.pose.alpha?0:Math.round(255*this.pose.alpha);
-      for(let channel=0;channel<3;channel++)pixels.data[i+channel]=Math.round(pixels.data[i+channel]/8)*8;
-    }
-    this.texture.context.putImageData(pixels,0,0);this.texture.refresh();
+    const stamp=[...Object.values(state.save.equipment),state.action,state.dir,state.elapsed,state.aspect,state.reducedMotion].join(':');if(stamp===this.stamp)return;this.stamp=stamp;
+    this.pose=this.model.sync(state);this.art=this.pose.art;
+    const c=this.texture.context;c.clearRect(0,0,480,800);c.drawImage(this.model.renderer.domElement,0,0,480,800);this.texture.refresh();this.image.setAlpha(this.pose.alpha);
     this.shade.clear();if(state.action==='death')this.shade.fillStyle(0x090710,Math.min(.82,state.elapsed/1000)).fillRect(0,0,240,400);
   }
-  destroy(){this.root.destroy(true);this.scene.textures.remove(this.key);}
+  destroy(){if(this.destroyed)return;this.destroyed=true;this.model.destroy();this.root.destroy(true);this.scene.textures.remove(this.key);}
 }
 export class EquipmentPortrait {
   constructor(scene,sprites,save){this.scene=scene;this.sprites=sprites;this.image=scene.add.image(120,200,'__WHITE');this.sync(save);}
@@ -64,11 +56,11 @@ export class EquipmentPortrait {
   }
 }
 
-export function createPhaserRenderer({canvas,background,sprites,tick,getState}){
+export function createPhaserRenderer({canvas,background,sprites,tick,getState,onRenderError}){
   let activeScene,hero,previewGame=null,enemyImages=[],enemyKey='',dangerAura;
   class CombatScene extends Phaser.Scene {
     constructor(){super('Combat');}
-    create(){activeScene=this;this.textures.addCanvas('background',background);this.backdrop=this.add.image(0,0,'background').setOrigin(0).setDisplaySize(480,800);const world=this.add.container(0,0).setScale(2);hero=new FirstPersonPlayer(this,sprites);world.add(hero.root);this.world=world;dangerAura=this.add.graphics();world.addAt(dangerAura,0);enemyImages=[this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false),this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false)];world.addAt(enemyImages[0],1);world.addAt(enemyImages[1],2);this.cameras.main.setBackgroundColor('#171522');}
+    create(){activeScene=this;this.textures.addCanvas('background',background);this.backdrop=this.add.image(0,0,'background').setOrigin(0).setDisplaySize(480,800);const world=this.add.container(0,0).setScale(2);try{hero=new FirstPersonPlayer(this,sprites);}catch(error){onRenderError?.(error);this.scene.pause();return;}world.add(hero.root);this.world=world;dangerAura=this.add.graphics();world.addAt(dangerAura,0);enemyImages=[this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false),this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false)];world.addAt(enemyImages[0],1);world.addAt(enemyImages[1],2);this.cameras.main.setBackgroundColor('#171522');}
     update(now){if(!hero)return;const initial=getState();this.world.setVisible(initial.phase!=='home');if(!initial.loaded){hero.root.setVisible(false);this.tweens.timeScale=0;return;}hero.root.setVisible(true);tick(now);const state=getState();this.world.setVisible(state.phase!=='home');if(state.phase==='home')return;this.tweens.timeScale=state.paused?0:1;hero.sync(state.hero);}
   }
   const game=new Phaser.Game({type:Phaser.CANVAS,canvas,width:480,height:800,transparent:false,antialias:false,pixelArt:true,audio:{noAudio:true},scene:CombatScene,banner:false,render:{roundPixels:false},fps:{target:60}});

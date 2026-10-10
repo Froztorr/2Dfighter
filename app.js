@@ -6,10 +6,10 @@ const canvas = $('scene'), background=document.createElement('canvas'), ctx = ba
 background.width=480;background.height=800;
 canvas.width = 480; canvas.height = 800;
 const BASE_SPRITES=['brute','lizard','wraith','knight','gear','guards','frost','spider','demon','relics','portrait'];
-const sprites={};let spritesLoaded=0;
+const sprites={};let spritesLoaded=0,renderFailure=false;
 function loadSprite(name){
   if(sprites[name])return sprites[name];const image=new Image();sprites[name]=image;
-  image.onload=()=>{spritesLoaded++;if(spritesLoaded===Object.keys(sprites).length){$('start').disabled=false;$('assetStatus').textContent='';if(phase==='home')renderHome();}};
+  image.onload=()=>{spritesLoaded++;if(spritesLoaded===Object.keys(sprites).length&&!renderFailure){$('start').disabled=false;$('assetStatus').textContent='';if(phase==='home')renderHome();}};
   image.onerror=()=>{$('assetStatus').textContent='โหลดภาพไม่สำเร็จ กรุณารีเฟรช';};image.src=`./assets/${name}.png`;return image;
 }
 function ensurePlayerArt(){for(const name of playerAssets(save))loadSprite(name);}
@@ -224,7 +224,7 @@ function renderHome(){
   $('homeProgress').innerHTML=`<b>LV ${save.level} · ${save.gold} GOLD</b><span>${cleared} / 6 ด่าน · ★ ${total} / 18</span><progress value="${save.xp}" max="${save.level*100}" aria-label="Experience"></progress>`;
   $('start').hidden=homeView!=='hall';
   $('homeBody').innerHTML=homeView==='hall'?`<div class="hallTitle"><small>A CHRONICLE OF ASH & STEEL</small><h1>EMBER<br>BLADE</h1><p>THE SIX FORSAKEN HALLS</p></div><div class="hallStory"><span>บทที่ ${save.unlocked} / VI</span><h2>${floors[save.unlocked-1]}</h2><p>อ่านท่าศัตรู ตั้งรับ แล้วชิงจังหวะสวนกลับ</p></div>`:
-    `<div class="mapHeading"><button data-home="hall">← โถงหลัก</button><h1>THE EXPEDITION</h1><p>เลือกด่าน · ชนะบอสเพื่อเปิดเส้นทางถัดไป</p></div><div class="stageMap">${FLOORS.map((f,i)=>`<button class="stageNode ${selectedFloor===i+1?'selected':''}" data-select-floor="${i+1}" ${i>=save.unlocked?'disabled':''}><span class="stageNumber">${i>=save.unlocked?'◇':String(i+1).padStart(2,'0')}</span><span><b>${f.name}</b><small>${i>=save.unlocked?'LOCKED · ผ่านด่านก่อนหน้า':save.bestStars[i+1]?'CLEARED':'UNEXPLORED'}</small></span><span class="mapStars">${'★'.repeat(save.bestStars[i+1]||0)}${'☆'.repeat(3-(save.bestStars[i+1]||0))}</span></button>`).join('')}</div><div class="expeditionDetail"><small>THREE ENCOUNTERS · ONE BOSS</small><h2>${floors[selectedFloor-1]}</h2><p>${FLOORS[selectedFloor-1].enemies.map(t=>enemyTypes[t]).join(' → ')}</p><div class="mapLoot">${FLOORS[selectedFloor-1].drops.map(id=>`<span>${itemIcon(id)}<small>${ITEMS[id].name}</small></span>`).join('')}</div><button class="primary" data-embark="${selectedFloor}" ${spritesLoaded<Object.keys(sprites).length?'disabled':''}>ออกเดินทาง · FLOOR ${selectedFloor}</button></div>`;
+    `<div class="mapHeading"><button data-home="hall">← โถงหลัก</button><h1>THE EXPEDITION</h1><p>เลือกด่าน · ชนะบอสเพื่อเปิดเส้นทางถัดไป</p></div><div class="stageMap">${FLOORS.map((f,i)=>`<button class="stageNode ${selectedFloor===i+1?'selected':''}" data-select-floor="${i+1}" ${i>=save.unlocked?'disabled':''}><span class="stageNumber">${i>=save.unlocked?'◇':String(i+1).padStart(2,'0')}</span><span><b>${f.name}</b><small>${i>=save.unlocked?'LOCKED · ผ่านด่านก่อนหน้า':save.bestStars[i+1]?'CLEARED':'UNEXPLORED'}</small></span><span class="mapStars">${'★'.repeat(save.bestStars[i+1]||0)}${'☆'.repeat(3-(save.bestStars[i+1]||0))}</span></button>`).join('')}</div><div class="expeditionDetail"><small>THREE ENCOUNTERS · ONE BOSS</small><h2>${floors[selectedFloor-1]}</h2><p>${FLOORS[selectedFloor-1].enemies.map(t=>enemyTypes[t]).join(' → ')}</p><div class="mapLoot">${FLOORS[selectedFloor-1].drops.map(id=>`<span>${itemIcon(id)}<small>${ITEMS[id].name}</small></span>`).join('')}</div><button class="primary" data-embark="${selectedFloor}" ${renderFailure||spritesLoaded<Object.keys(sprites).length?'disabled':''}>ออกเดินทาง · FLOOR ${selectedFloor}</button></div>`;
 }
 function goHome(view='hall'){
   phase='home';homeView=view;selectedFloor=Math.min(save.unlocked,Math.max(1,selectedFloor));paused=false;attack=null;pendingSlash=null;enemy=null;mini=null;releaseGuard();pointer=null;trail=[];particles=[];cuts=[];hitStop=0;heroAction={type:'idle',dir:'right',at:time};$('panel').hidden=true;$('intro').hidden=false;ensurePlayerArt();renderHome();hud();
@@ -236,7 +236,7 @@ document.addEventListener('click',e=>{
   if(b.id==='start'){homeView='map';selectedFloor=save.unlocked;renderHome();}
   if(b.dataset.home)goHome(b.dataset.home);
   if(b.dataset.selectFloor&&Number(b.dataset.selectFloor)<=save.unlocked){selectedFloor=Number(b.dataset.selectFloor);renderHome();}
-  if(b.dataset.embark&&Number(b.dataset.embark)<=save.unlocked&&spritesLoaded===Object.keys(sprites).length){$('intro').hidden=true;enter(Number(b.dataset.embark));}
+  if(b.dataset.embark&&!renderFailure&&Number(b.dataset.embark)<=save.unlocked&&spritesLoaded===Object.keys(sprites).length){$('intro').hidden=true;enter(Number(b.dataset.embark));}
   if(b.dataset.hub){tab=b.dataset.hub;openPanel();}
   if(b.id==='heroBtn'||b.id==='menuBtn')openPanel();
   if(b.hasAttribute('data-close')){ mini=null;$('panel').hidden=true;paused=false;if(phase==='home')renderHome(); }
@@ -356,9 +356,9 @@ function loop(now){let dt=Math.min(50,now-last);last=now;updateMini(now);if(now>
     if(phase==='combat'&&!attack&&time>=nextAttack&&time>=stunned){const pattern=enemy.type==='frost'?['normal','heavy','normal','sweep']:enemy.type==='spider'?['normal','normal','heavy','normal']:enemy.type==='demon'?['heavy','normal','sweep','normal']:['normal','normal','heavy','normal','sweep'];const kind=pattern[attackCount++%pattern.length],duration=kind==='normal'?Math.max(650,1050-floor*70):1300;attack={dir:Object.keys(DIR)[Math.floor(Math.random()*4)],kind,started:time,at:time+duration};enemy.dir=attack.dir;}
   }
 }hud();draw();}
-const renderer=createPhaserRenderer({canvas,background,sprites,tick:loop,getState:()=>{
+const renderer=createPhaserRenderer({canvas,background,sprites,tick:loop,onRenderError:()=>{renderFailure=true;$('start').disabled=true;$('assetStatus').textContent='เปิด 3D ไม่สำเร็จ กรุณาเปิด WebGL หรือ hardware acceleration แล้วโหลดใหม่';},getState:()=>{
   ensurePlayerArt();
   const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
-  return {phase,paused,loaded:spritesLoaded===Object.keys(sprites).length,hero:{save,...currentHero(),clock:time,aspect,reducedMotion}};
+  return {phase,paused,loaded:!renderFailure&&spritesLoaded===Object.keys(sprites).length,hero:{save,...currentHero(),clock:time,aspect,reducedMotion}};
 }});
 ensurePlayerArt();renderHome();hud();

@@ -6,10 +6,12 @@
   "scripts": {
     "test": "node --test test.mjs",
     "start": "node server.mjs",
-    "test:browser": "node tools/browser-animation.mjs"
+    "test:browser": "node tools/browser-animation.mjs",
+    "preview:3d": "node tools/preview-3d.mjs"
   },
   "dependencies": {
-    "phaser": "^3.90.0"
+    "phaser": "^3.90.0",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "playwright": "^1.58.2"

@@ -1,187 +1,91 @@
-import { ITEMS, HERO_ACTIONS } from './core.mjs';
+import { Vector3, Quaternion, Euler } from './vendor/three.module.js';
+import { HERO_ACTIONS } from './core.mjs';
 import { equipmentArt } from './fps-player.mjs';
 
-const mix=(a,b,t)=>a+(b-a)*t;
-const smooth=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
-const blend=(a,b,t)=>a.map((v,i)=>mix(v,b[i],smooth(t)));
-const rest=[181,321,.28];
-// Wrist x/y and grip angle. The contact key is shared with gameplay's 110 ms hit.
+export const ARM_LENGTHS={upper:.34,forearm:.33};
+export const RIGHT_WRIST=new Vector3(.031,-.063,.025);
+export const LEFT_WRIST=new Vector3(-.031,-.063,.025);
+export const SUPPORT_GRIP=new Vector3(0,-.125,0);
+const yAxis=new Vector3(0,1,0);
+const clamp=t=>Math.max(0,Math.min(1,t));
+const ease=t=>{t=clamp(t);return t*t*(3-2*t);};
+const v=a=>new Vector3(...a);
+const q=a=>new Quaternion().setFromEuler(new Euler(...a,'YXZ'));
+const key=(position,rotation,torso=[0,0,0])=>({position,rotation,torso});
+const ready=key([.145,-.255,-.62],[-.35,-.12,.18]);
+const twoReady=key([.095,-.255,-.64],[-.25,-.08,.1]);
+// Positions describe a complete cut through space: chamber, acceleration,
+// contact (110 ms), follow-through and recovery. The shoulder girdle turns too.
 export const STRIKE_KEYS={
- right:[[195,337,.85],[218,312,1.35],[126,270,-.85],[73,304,-1.35],rest],
- left:[[151,334,-.7],[99,302,-1.35],[149,270,.85],[211,307,1.4],rest],
- up:[[179,346,.1],[157,366,-.15],[137,255,.05],[146,249,.15],rest],
- down:[[186,314,.35],[152,244,.12],[143,309,-.12],[147,357,-.28],rest]
+ right:[ready,key([-.115,-.24,-.52],[-.45,-.25,1.05],[0,-.16,.055]),key([.07,-.16,-.65],[-.55,.15,-.3],[0,.05,-.015]),key([.26,-.28,-.52],[-.6,.35,-1.15],[0,.17,-.055]),ready],
+ left:[ready,key([.29,-.22,-.49],[-.35,.35,-1.05],[0,.14,-.05]),key([.03,-.16,-.66],[-.55,-.1,.35],[0,-.03,.01]),key([-.12,-.27,-.53],[-.55,-.3,1.2],[0,-.17,.055]),ready],
+ up:[ready,key([.105,-.405,-.57],[-1.9,.05,-.1],[.05,0,.03]),key([.08,-.22,-.68],[-.7,.05,.05],[-.025,0,0]),key([.14,-.075,-.59],[-.1,.03,.05],[-.075,0,-.025]),ready],
+ down:[ready,key([.09,-.07,-.52],[.2,-.08,.1],[-.065,-.07,.025]),key([.085,-.23,-.66],[-.95,.03,-.07],[.015,.03,-.01]),key([.18,-.39,-.56],[-1.95,.12,-.17],[.065,.075,-.02]),ready]
 };
-const strikeTimes=[0,55,110,175,300];
-function keyed(keys,times,elapsed){
- const i=Math.max(0,times.findLastIndex(t=>elapsed>=t));
- return i>=keys.length-1?keys.at(-1):blend(keys[i],keys[i+1],(elapsed-times[i])/(times[i+1]-times[i]));
+const times=[0,48,110,185,300];
+function interpolate(a,b,t){t=ease(t);return {position:v(a.position).lerp(v(b.position),t),quaternion:q(a.rotation).slerp(q(b.rotation),t),torso:q(a.torso).slerp(q(b.torso),t)};}
+function track(keys,elapsed){
+ const i=Math.max(0,times.findLastIndex(t=>elapsed>=t));if(i===keys.length-1)return interpolate(keys[i],keys[i],0);
+ const t=(elapsed-times[i])/(times[i+1]-times[i]),dt=times[i+1]-times[i],t2=t*t,t3=t2*t;
+ const curve=values=>{
+  const tangent=k=>k===0||k===values.length-1?0:(values[k+1]-values[k-1])/(times[k+1]-times[k-1]);
+  return (2*t3-3*t2+1)*values[i]+(t3-2*t2+t)*dt*tangent(i)+(-2*t3+3*t2)*values[i+1]+(t3-t2)*dt*tangent(i+1);
+ };
+ const rotation=field=>{
+  const rotations=keys.map(k=>q(k[field]));
+  for(let k=1;k<rotations.length;k++)if(rotations[k-1].dot(rotations[k])<0)rotations[k].set(...rotations[k].toArray().map(v=>-v));
+  return new Quaternion(...['x','y','z','w'].map(component=>curve(rotations.map(r=>r[component])))).normalize();
+ };
+ // Non-uniform cubic tangents keep velocity through contact; only the chamber
+ // and final recovery settle. Gameplay's hitstop still freezes the actual hit.
+ return {position:new Vector3(...[0,1,2].map(component=>curve(keys.map(k=>k.position[component])))),quaternion:rotation('rotation'),torso:rotation('torso')};
 }
-export function gripPoint(grip,x=0,y=0){
- return {x:grip[0]+Math.cos(grip[2])*x-Math.sin(grip[2])*y,y:grip[1]+Math.sin(grip[2])*x+Math.cos(grip[2])*y};
-}
-function arm(side,wrist,angle){
- const shoulder={x:side==='right'?259:-19,y:442};
- const elbow={x:mix(shoulder.x,wrist.x,.48)+(side==='right'?9:-9),y:mix(shoulder.y,wrist.y,.48)+10};
- return {shoulder,elbow,wrist,angle};
+export function gripPoint(transform,offset=new Vector3()){return offset.clone().applyQuaternion(transform.quaternion).add(transform.position);}
+
+// Two-bone analytic IK: fixed bone lengths with a moving elbow pole. No arm
+// scaling, straight-line elbow approximation or detached weapon overlays.
+export function solveArm(shoulder,target,pole){
+ const {upper:a,forearm:b}=ARM_LENGTHS;
+ const delta=target.clone().sub(shoulder),requested=delta.length();
+ const distance=Math.max(.04,Math.min(a+b-.00001,requested)),axis=delta.clone().normalize();
+ const bend=pole.clone().sub(shoulder);bend.addScaledVector(axis,-bend.dot(axis));
+ if(bend.lengthSq()<1e-8)bend.set(1,0,0).addScaledVector(axis,-axis.x);bend.normalize();
+ const along=(a*a-b*b+distance*distance)/(2*distance),height=Math.sqrt(Math.max(0,a*a-along*along));
+ const elbow=shoulder.clone().addScaledVector(axis,along).addScaledVector(bend,height);
+ const wrist=shoulder.clone().addScaledVector(axis,distance);
+ const upperQuaternion=new Quaternion().setFromUnitVectors(yAxis,elbow.clone().sub(shoulder).normalize());
+ const forearmQuaternion=new Quaternion().setFromUnitVectors(yAxis,wrist.clone().sub(elbow).normalize());
+ return {shoulder,elbow,wrist,upperQuaternion,forearmQuaternion,reachable:requested<a+b,reachError:wrist.distanceTo(target)};
 }
 export function samplePlayerRig({save,action='idle',dir='right',elapsed=0,reducedMotion=false}){
  elapsed=Number.isFinite(elapsed)?Math.max(0,elapsed):0;
- const art=equipmentArt(save),duration=HERO_ACTIONS[action]?.duration||360;
- const bob=reducedMotion?0:Math.sin(elapsed/(action==='walk'?90:430))*(action==='walk'?3:1.1);
- let grip=[rest[0],rest[1]+bob,rest[2]],off=[54,328+ bob,-.12],alpha=1,magic=0;
- const pulse=Math.sin(Math.min(1,elapsed/duration)*Math.PI);
- if(action==='slash'&&elapsed<300)grip=keyed(STRIKE_KEYS[dir]||STRIKE_KEYS.right,strikeTimes,elapsed);
+ const art=equipmentArt(save),base=art.twoHanded?twoReady:ready;
+ let grip=interpolate(base,base,0),off=interpolate(key([-.145,-.26,-.64],[-.12,-.12,.12]),key([-.145,-.26,-.64],[-.12,-.12,.12]),0),alpha=1,magic=0;
+ const duration=HERO_ACTIONS[action]?.duration||360,pulse=Math.sin(clamp(elapsed/duration)*Math.PI);
+ if(action==='slash'&&elapsed<300){const keys=(STRIKE_KEYS[dir]||STRIKE_KEYS.right).map((k,i)=>i===0||i===4?base:k);grip=track(keys,elapsed);off.position.x+=Math.sin(elapsed/300*Math.PI)*.035;off.position.z-=Math.sin(elapsed/300*Math.PI)*.025;}
  else if(action==='guard'||action==='block'){
-  grip=[176,308,.38];off=[84,278,-.2];
-  if(action==='block'&&elapsed<360){const recoil=Math.sin(Math.min(1,elapsed/360)*Math.PI);off[1]+=recoil*17;off[2]+=recoil*.2;grip[1]+=recoil*8;}
- }else if(action==='parry'&&elapsed<360){grip=blend(rest,[124,274,1.15],pulse);off=blend(off,[89,296,-.5],pulse);}
- else if(['cast','heal','ward'].includes(action)&&elapsed<duration){grip=blend(rest,[158,287,-.15],pulse);off=blend(off,[80,298,.2],pulse);magic=pulse;}
- else if(action==='hurt'&&elapsed<360){grip[0]+=pulse*14;grip[1]+=pulse*22;grip[2]+=pulse*.22;off[1]+=pulse*17;}
- else if(action==='stun'){grip[1]+=23;off[1]+=25;if(!reducedMotion)grip[2]+=Math.sin(elapsed/60)*.06;}
- else if(action==='dodge'&&elapsed<320){const sign=dir==='left'?-1:1;grip[0]+=sign*pulse*32;off[0]+=sign*pulse*32;grip[1]+=pulse*28;off[1]+=pulse*28;}
- else if(action==='victory'&&elapsed<1100){grip=blend(rest,[169,261,-.13],pulse);}
- else if(action==='death'){const fall=smooth(elapsed/1000);grip[1]+=fall*190;grip[2]+=fall*.8;off[1]+=fall*190;alpha=1-fall;}
- const right=arm('right',gripPoint(grip),grip[2]);
- // Support hand is a child of the SAME weapon grip, never an independent pose.
- const left=art.twoHanded?arm('left',gripPoint(grip,0,25),grip[2]):arm('left',gripPoint(off),off[2]);
- return {art,action,grip,off,right,left,alpha,magic,contact:action==='slash'&&elapsed===110};
-}
-const outline='#14141d';
-function polygon(c,points,color,edge=true){c.beginPath();points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();c.fillStyle=color;c.fill();c.strokeStyle=outline;c.lineWidth=1.5;if(edge)c.stroke();}
-function line(c,a,b,width,color){c.beginPath();c.moveTo(a.x,a.y);c.lineTo(b.x,b.y);c.strokeStyle=color;c.lineWidth=width;c.lineCap='round';c.stroke();}
-function local(c,wrist,angle,draw){c.save();c.translate(wrist.x,wrist.y);c.rotate(angle);draw();c.restore();}
-function palette(art){
- const base=[['#997862','#d2ad87'],['#515e73','#adbccc'],['#354c40','#718569'],['#494273','#9d8ac5']][art.look];
- const colors={look:art.look,base:base[0],light:base[1],glove:art.look===1?'#74859b':art.look===0?'#c99572':'#5b4140'};
- if(art.armorHue){
-  const a=art.armorHue*Math.PI/180,cs=Math.cos(a),sn=Math.sin(a);
-  const m=[[.213+.787*cs-.213*sn,.715-.715*cs-.715*sn,.072-.072*cs+.928*sn],[.213-.213*cs+.143*sn,.715+.285*cs+.140*sn,.072-.072*cs-.283*sn],[.213-.213*cs-.787*sn,.715-.715*cs+.715*sn,.072+.928*cs+.072*sn]];
-  for(const key of ['base','light','glove']){const n=parseInt(colors[key].slice(1),16),rgb=[n>>16,(n>>8)&255,n&255];colors[key]='#'+m.map(row=>Math.max(0,Math.min(255,Math.round(row.reduce((sum,v,i)=>sum+v*rgb[i],0)))).toString(16).padStart(2,'0')).join('');}
- }
- return colors;
-}
-function tone(hex,factor){const n=parseInt(hex.slice(1),16);return '#'+[n>>16,(n>>8)&255,n&255].map(v=>Math.min(255,Math.round(v*factor)).toString(16).padStart(2,'0')).join('');}
-function limb(c,a,b,wa,wb,colors){
- const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy),nx=-dy/len,ny=dx/len;
- const at=(p,w,t)=>[p.x+nx*w*t,p.y+ny*w*t];
- polygon(c,[at(a,wa,-1),at(b,wb,-1),at(b,wb,1),at(a,wa,1)],tone(colors.base,.55));
- const bands=[[-1,-.63,colors.base],[-.63,-.25,colors.light],[-.25,.25,colors.base],[.25,.68,tone(colors.base,.78)]];
- for(const [lo,hi,color]of bands)polygon(c,[at(a,wa,lo),at(b,wb,lo),at(b,wb,hi),at(a,wa,hi)],color,false);
- // Segmented vambrace plates / stitched cloth folds track the forearm axis.
- for(let i=1;i<5;i++){
-  const t=i/5,p={x:mix(a.x,b.x,t),y:mix(a.y,b.y,t)},w=mix(wa,wb,t);
-  line(c,{x:p.x+nx*w*.85,y:p.y+ny*w*.85},{x:p.x-nx*w*.85,y:p.y-ny*w*.85},colors.look===1?2:1,tone(colors.base,.55));
-  if(colors.look===1)line(c,{x:p.x-nx*w*.7,y:p.y-ny*w*.7+2},{x:p.x+nx*w*.4,y:p.y+ny*w*.4+2},1,colors.light);
- }
-}
-function drawArm(c,bone,colors){
- limb(c,bone.shoulder,bone.elbow,21,15,colors);limb(c,bone.elbow,bone.wrist,15,11,colors);
- local(c,bone.wrist,bone.angle,()=>{
-  polygon(c,[[-15,13],[13,13],[15,29],[-14,29]],colors.base);
-  polygon(c,[[-14,14],[-3,14],[-3,28],[-13,28]],colors.light,false);
-  polygon(c,[[9,14],[13,14],[14,28],[9,28]],tone(colors.base,.6),false);
-  polygon(c,[[-12,-7],[10,-10],[14,7],[8,17],[-9,14],[-15,4]],tone(colors.glove,.7));
-  polygon(c,[[-11,-6],[-2,-9],[7,-7],[9,2],[4,9],[-8,7]],colors.glove,false);
-  if(colors.look===1){
-   polygon(c,[[-11,-5],[-2,-8],[8,-6],[10,3],[5,9],[-8,7]],colors.light);
-   polygon(c,[[-10,-4],[-2,-7],[1,-5],[-1,4],[-8,5]],tone(colors.light,1.3),false);
-   for(const y of [17,22])line(c,{x:-11,y},{x:11,y},1.3,colors.base);
-  }else if(colors.look===2){
-   line(c,{x:-9,y:19},{x:10,y:19},3,'#b89560');c.fillStyle='#d5b578';c.fillRect(3,17,4,4);
-  }else if(colors.look===3){polygon(c,[[-4,18],[0,14],[4,18],[0,24]],'#c8b4ef');}
- });
-}
-function fingers(c,bone,colors){
- local(c,bone.wrist,bone.angle,()=>{
-  // Draw fingers after the handle: the grip is visibly wrapped around equipment.
-  for(let i=0;i<3;i++){
-   const color=colors.look===1?colors.light:colors.glove;
-   polygon(c,[[-9,-5+i*5],[5,-5+i*5],[7,-2+i*5],[4,1+i*5],[-10,1+i*5]],tone(color,.85));
-   line(c,{x:-7,y:-4+i*5},{x:3,y:-4+i*5},1.5,tone(color,1.25));
-  }
-  polygon(c,[[5,-11],[12,-7],[10,3],[5,5],[3,0]],colors.glove);
- });
-}
-export const WEAPON_STYLES={
- 'rust-sword':{kind:'sword',length:104,color:'#bd9475'},'iron-sword':{kind:'sword',length:113,color:'#c8d8e0'},
- mace:{kind:'mace',length:87,color:'#a9aeba'},axe:{kind:'axe',length:94,color:'#b8c7ce'},
- greatsword:{kind:'sword',length:148,color:'#efcf88',wide:true},'ember-staff':{kind:'staff',length:147,color:'#ffae55'},
- 'parry-dagger':{kind:'dagger',length:61,color:'#b8cad7'},'venom-dagger':{kind:'dagger',length:68,color:'#98c77c'},
- 'fire-wand':{kind:'staff',length:98,color:'#ff7955'},'ice-staff':{kind:'staff',length:145,color:'#90e4f4'},
- 'frost-sword':{kind:'sword',length:125,color:'#96dfed'},'spider-fang':{kind:'dagger',length:82,color:'#acd777',hook:true},
- 'spider-claw':{kind:'dagger',length:74,color:'#a6c982',hook:true},'assassin-dagger':{kind:'dagger',length:70,color:'#a3a4d1',hook:true},
- 'inferno-axe':{kind:'axe',length:134,color:'#f39456',wide:true},'demon-staff':{kind:'staff',length:155,color:'#ed6d79'}
-};
-function weapon(c,id,grip){
- const style=WEAPON_STYLES[id];if(!style)return;
- local(c,gripPoint(grip),grip[2],()=>{
-  const {kind,length:l,color,wide,hook}=style;
-  polygon(c,[[-4,37],[4,37],[4,-l],[-4,-l]],kind==='staff'?'#725344':'#675046');
-  for(let y=-12;y<35;y+=6){c.fillStyle='#b38c60';c.fillRect(-3,y,6,2);}
-  if(kind==='sword'||kind==='dagger'){
-   const w=wide?13:kind==='dagger'?7:9,tip=hook?13:0;
-   polygon(c,[[-w,-22],[-w,-l+20],[tip,-l],[w,-l+22],[w,-22]],color);
-   polygon(c,[[-w+1,-24],[-w+1,-l+21],[tip,-l+3],[-2,-l+19],[-2,-24]],tone(color,1.22),false);
-   polygon(c,[[1,-24],[tip,-l+3],[w-1,-l+23],[w-1,-24]],tone(color,.62),false);
-   line(c,{x:-1,y:-28},{x:tip,y:-l+8},1,tone(color,1.35));
-   if(id==='rust-sword')for(let i=0;i<8;i++){c.fillStyle=i%2?'#714d3f':'#8e6349';c.fillRect(-w+2+(i*3)%8,-35-i*8,2+i%3,3);}
-   if(['frost-sword','spider-fang','venom-dagger'].includes(id))for(let i=0;i<4;i++){c.fillStyle=tone(color,1.35);c.fillRect(-3,-36-i*14,3,3);}
-   polygon(c,[[-21,-24],[21,-24],[19,-18],[-19,-18]],'#b99658');
-   line(c,{x:-18,y:-23},{x:18,y:-23},2,'#ecd5a0');
-   polygon(c,[[-19,-20],[19,-20],[18,-18],[-18,-18]],'#705536',false);
-  }else if(kind==='axe'){
-   polygon(c,[[-5,-l+10],[25,-l-4],[39,-l+6],[34,-l+36],[8,-l+28],[-5,-l+28]],color);
-   polygon(c,[[4,-l+11],[24,-l+2],[29,-l+9],[24,-l+27],[8,-l+24]],tone(color,.65),false);
-   polygon(c,[[30,-l+2],[39,-l+6],[34,-l+36],[27,-l+28]],'#fff0bd');
-   if(wide)polygon(c,[[-5,-l+9],[-23,-l],[-34,-l+11],[-29,-l+34],[-5,-l+28]],color);
-  }else if(kind==='mace'){
-   polygon(c,[[-8,-l-6],[8,-l-6],[17,-l+6],[12,-l+27],[-12,-l+27],[-17,-l+6]],color);
-   for(const x of [-8,0,8])line(c,{x,y:-l},{x,y:-l+20},3,'#e8ebec');
-  }else{
-   polygon(c,[[-5,-l+14],[-15,-l],[-10,-l-21],[0,-l-31],[10,-l-21],[15,-l],[5,-l+14]],'#ae9764');
-   polygon(c,[[0,-l-25],[9,-l-11],[0,-l+3],[-9,-l-11]],color);
-   polygon(c,[[0,-l-25],[1,-l-11],[0,-l+3],[-9,-l-11]],tone(color,.65),false);
-   polygon(c,[[0,-l-25],[9,-l-11],[1,-l-12]],tone(color,1.4),false);
-   line(c,{x:-2,y:25},{x:-2,y:-l+13},1,'#b28b61');
-   for(let y=-l+18;y<-20;y+=22)polygon(c,[[-6,y],[6,y],[6,y+5],[-6,y+5]],'#baa374');
-   c.fillStyle='#fff1d0';c.beginPath();c.arc(-2,-l-13,3,0,Math.PI*2);c.fill();
-  }
-  polygon(c,[[-6,32],[6,32],[7,40],[-7,40]],'#b99658');
- });
-}
-function shield(c,id,grip){
- const color={'wood-shield':'#8d6845','steel-shield':'#8694a4','guardian-shield':'#c6a468','frost-shield':'#8ac8dc'}[id];
- local(c,gripPoint(grip),grip[2],()=>{
-  polygon(c,[[-35,-43],[0,-54],[35,-43],[33,18],[22,42],[0,55],[-22,42],[-33,18]],color);
-  polygon(c,[[-28,-37],[0,-45],[28,-37],[26,15],[17,35],[0,46],[-17,35],[-26,15]],'#3a3031');
-  for(let i=0;i<5;i++){
-   const x=-24+i*10;
-   polygon(c,[[x,-35],[x+8,-38],[x+8,29],[x,33]],['#594434','#6e5139','#503d30','#76583d','#48392e'][i],false);
-   for(let j=0;j<4;j++)line(c,{x:x+2+(j%2),y:-27+j*13},{x:x+3,y:-18+j*13},1,'#9b7951');
-  }
-  polygon(c,[[-35,-43],[0,-54],[35,-43],[30,-40],[0,-49],[-30,-39]],tone(color,1.35),false);
-  polygon(c,[[30,-40],[35,-43],[33,18],[22,42],[0,55],[0,49],[18,37],[27,15]],tone(color,.58),false);
-  for(const [x,y]of [[-30,-36],[30,-36],[-26,17],[26,17],[0,49]]){c.fillStyle='#d5c5a1';c.fillRect(x-1,y-1,2,2);}
-  for(const x of [-18,0,18])line(c,{x,y:-34},{x,y:31},2,'#65514b');
-  for(const y of [-24,21]){
-   polygon(c,[[-29,y-4],[29,y-4],[29,y+4],[-29,y+4]],'#937b61');
-   line(c,{x:-27,y:y-3},{x:27,y:y-3},1,'#d0b68a');
-   line(c,{x:-27,y:y+3},{x:27,y:y+3},2,'#514030');
-  }
-  polygon(c,[[-15,-12],[-7,-12],[-7,15],[-15,15]],'#c5a27b');
-  polygon(c,[[11,-16],[21,-13],[21,18],[11,20]],'#65514b');
- });
-}
-export function drawPlayerRig(c,pose){
- c.clearRect(0,0,240,400);c.save();c.globalAlpha=pose.alpha;
- const colors=palette(pose.art);
- // Apply material hue only to the sleeves, never to steel, gems or skin.
- drawArm(c,pose.left,colors);drawArm(c,pose.right,colors);
- if(pose.art.offhand&&ITEMS[pose.art.offhand]?.shield)shield(c,pose.art.offhand,pose.off);
- else if(pose.art.offhand)weapon(c,pose.art.offhand,pose.off);
- weapon(c,pose.art.weapon,pose.grip);
- fingers(c,pose.left,colors);fingers(c,pose.right,colors);
- if(pose.magic){const p=pose.right.wrist;c.save();c.globalAlpha*=pose.magic;c.strokeStyle=pose.action==='heal'?'#9fffc3':'#d5b6ff';c.lineWidth=2;c.beginPath();c.arc(p.x,p.y-30,22+pose.magic*8,0,Math.PI*2);c.stroke();c.restore();}
- c.restore();
+  grip=interpolate(base,key([.2,-.245,-.56],[-.15,.15,-.5]),1);
+  off=interpolate(key([-.16,-.14,-.58],[.08,-.2,.1]),key([-.16,-.14,-.58],[.08,-.2,.1]),0);
+  if(action==='block'&&elapsed<360){off.position.z+=pulse*.075;off.position.y-=pulse*.035;off.quaternion.multiply(q([pulse*.14,0,pulse*.08]));grip.torso=q([pulse*.045,0,0]);}
+ }else if(action==='parry'&&elapsed<360){grip=interpolate(base,key([.025,-.13,-.6],[-.25,.22,-.95],[0,.08,-.04]),pulse);off.position.z-=pulse*.04;}
+ else if(['cast','heal','ward'].includes(action)&&elapsed<duration){grip=interpolate(base,key([.11,-.22,-.64],[-.13,.15,.04],[-.025,0,0]),pulse);off.position.lerp(v([-.12,-.21,-.61]),pulse);magic=pulse;}
+ else if(action==='hurt'&&elapsed<360){grip.position.y-=pulse*.075;grip.position.z+=pulse*.04;grip.torso=q([pulse*.08,pulse*.04,0]);off.position.y-=pulse*.05;}
+ else if(action==='stun'){grip.position.y-=.055;off.position.y-=.05;if(!reducedMotion)grip.quaternion.multiply(q([0,Math.sin(elapsed/70)*.025,0]));}
+ else if(action==='dodge'&&elapsed<320){const sign=dir==='left'?-1:1;grip.position.x+=sign*pulse*.055;off.position.x+=sign*pulse*.055;grip.position.y-=pulse*.035;grip.torso=q([0,-sign*pulse*.07,-sign*pulse*.12]);}
+ else if(action==='victory'&&elapsed<1100)grip=interpolate(base,key([.14,-.11,-.56],[.05,.1,-.12],[-.035,0,0]),pulse);
+ else if(action==='death'){const fall=ease(elapsed/1000);grip.position.y-=fall*.22;off.position.y-=fall*.22;grip.torso=q([fall*.2,0,fall*.12]);alpha=1-fall;}
+ if(!reducedMotion&&['idle','walk'].includes(action)){const bob=Math.sin(elapsed/(action==='walk'?120:650))*(action==='walk'?.007:.002);grip.position.y+=bob;off.position.y+=bob;}
+ const torso={position:new Vector3(0,-.43,.045),quaternion:grip.torso};
+ const shoulder=side=>v([side==='right'?.275:-.275,.1,-.225]).applyQuaternion(torso.quaternion).add(torso.position);
+ const rightTarget=gripPoint(grip,RIGHT_WRIST);
+ const leftGrip=art.twoHanded?{position:gripPoint(grip,SUPPORT_GRIP),quaternion:grip.quaternion}:off;
+ const leftTarget=gripPoint(leftGrip,LEFT_WRIST);
+ const right=solveArm(shoulder('right'),rightTarget,gripPoint(torso,v([.49,-.21,-.12])));
+ const left=solveArm(shoulder('left'),leftTarget,gripPoint(torso,v([-.49,-.2,-.12])));
+ // The authored paths stay reachable. IK also safely constrains terminal falls.
+ // Equipment follows the actual wrist, so there is never a separated grip.
+ grip.position.copy(right.wrist).sub(RIGHT_WRIST.clone().applyQuaternion(grip.quaternion));
+ if(art.twoHanded){leftGrip.position.copy(gripPoint(grip,SUPPORT_GRIP));}
+ else off.position.copy(left.wrist).sub(LEFT_WRIST.clone().applyQuaternion(off.quaternion));
+ return {art,action,grip,off,torso,right,left,leftGrip,alpha,magic,contact:action==='slash'&&elapsed===110};
 }

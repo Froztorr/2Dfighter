@@ -1,6 +1,6 @@
 # Emberblade — 2Dfighter
 
-เกม mobile portrait RPG แบบ pixel art ใช้ Phaser 3.90 สำหรับ game loop, Scene, sprite, Container และ tween ของอนิเมชั่น ตัว Phaser อยู่ใน vendor/ จึงไม่ต้องโหลด runtime จาก CDN
+เกม mobile portrait RPG ใช้ Phaser 3.90 สำหรับ game loop, ฉากและ UI และ Three.js 0.180 สำหรับโมเดล 3D ของแขน ถุงมือ อาวุธ และโล่ในฉากต่อสู้ Runtime ทั้งสองอยู่ใน vendor/ จึงไม่ต้องโหลดจาก CDN
 
 ## เล่นบนคอมพิวเตอร์
 
@@ -14,7 +14,7 @@
 
 เริ่มที่โถงหลัก → เลือกด่าน → ออกเดินทาง แผนที่แสดงด่านที่ล็อก/ปลดล็อก ดาวสูงสุด และของดรอป พร้อม EXP/ความคืบหน้ารวม หน้าตัวละครจัดเป็น folio ธีมหินและทองเหลืองพร้อมแท่นตัวละคร เข้าคลังอาวุธ/ภารกิจ/แคมป์ได้จากโถง กลับโถงระหว่างสู้จะยุติรอบปัจจุบัน โดยของที่ได้รับแล้วไม่หาย
 
-ฉากต่อสู้เป็น first person เห็นมือและอาวุธที่ถือ ใช้ 2D joint rig วาดแขน ข้อมือ ถุงมือ และอาวุธติดจุดจับเดียวกัน ไม่ตัดเฟรมจาก sprite sheet ผู้เล่น การฟันมีง้าง–ปะทะ–คืนท่า 4 ทิศ ดาเมจเกิดที่ 110 ms; parry ตอบสนองทันที มี hitstop, enemy recoil และเอฟเฟกต์ตามทิศ ปิด camera shake และ idle bob ตาม prefers-reduced-motion
+ฉากต่อสู้เป็น first person มือและอุปกรณ์เป็น 3D จริง ใช้ perspective camera, โมเดล mesh และแสงโลหะ/ผ้า มีโครงกระดูกช่วงไหล่–ศอก–ข้อมือ ใช้ two-bone IK ที่คงความยาวแขนและกำหนดทิศงอศอก ท่าฟันเคลื่อนผ่านระยะลึกพร้อมบิดช่วงไหล่ มีง้าง–ปะทะ–ตามแรง–คืนท่า 4 ทิศ ดาเมจเกิดที่ 110 ms; parry ตอบสนองทันที มี hitstop และ enemy recoil ปิด camera shake และ idle bob ตาม prefers-reduced-motion
 
 ## Controls
 
@@ -35,11 +35,15 @@
 - Forge ซื้อของ, Vigor/Edge เพิ่ม stat, replay ด่านที่ปลดล็อกได้; เซฟเก่าจะย้ายแหวนเดิมไปช่องแรกโดยรักษาอุปกรณ์และทองเดิม
 - บันทึกทอง/อุปกรณ์/upgrade/ด่านที่ปลดล็อกใน localStorage (`emberblade-v1`) ไม่บันทึก combat กลางห้อง เปิดเมนูหรือสลับแท็บจะ pause
 
-## Phaser first-person rig animation
+## First-person 3D combat animation
 
-`player-rig.mjs` samples continuous wrist poses and draws jointed forearms, cuffs, palms and fingers onto a native 240 × 400 pixel Phaser texture. Hard pixel silhouettes, 5-bit color channels, stepped lighting, blade bevels, segmented gauntlets and shaded wood/metal surfaces give the equipment a 16-bit look with dimensional shading. All 13 main weapons and seven offhands have explicit geometry; fingers render over the handle. Two-handed grips share the same weapon transform, so the support hand cannot drift away. Shields show their inner surface, straps and handle. Armor selects cloth, plate, leather or mage gloves and sleeves; there is no separate glove inventory slot. Four slash paths have contact at 110 ms, matching gameplay damage. Guard, recoil, parry, dodge, spells, stun, victory and death use the same rig. The old `fps-*.png` atlases are retained as source art but are not loaded for combat. The equipment portrait and enemy artwork remain unchanged.
+`player-rig.mjs` authors 3D wrist and torso keyframes and solves fixed-length shoulder/elbow/wrist chains. `player-3d.mjs` builds Three.js bone hierarchies, sculpted glove palms with curled fingers, armor sleeves, 13 main weapons and seven offhands. Weapons are children of the wrist bones; both hands share one grip transform for two-handed equipment. Shields face the enemy and show their back, straps and grip to the camera. Armor controls cloth, plate, leather and mage gloves/sleeves, including hue variants; there is no separate glove slot. Horizontal and vertical cuts have distinct chamber, contact, follow-through and recovery poses in 3D, with damage still at 110 ms. Guard recoil, parry, spells, hurt, stun, dodge, victory and death use the same skeleton.
 
-แถวเฟรมคือ idle, ฟันขวา, ฟันซ้าย, ฟันขึ้น, ฟันลง, guard/block, parry/cast และ hurt/death การหลบใช้เฟรมลดมือหลบ การสตั้นค้างสลับเฟรมเสียหลัก การตายลดอาวุธและจอมืดก่อนเปิดผลแพ้ ชุดสีพิเศษเปลี่ยนสีวัสดุบน atlas โดยคง alpha และตำแหน่งมือ/ด้ามเดิม หมวกและรองเท้าดูได้ในหน้าสวมอุปกรณ์เพราะมุมมองต่อสู้ไม่เห็นส่วนเหล่านี้
+`player-sculpt.mjs` creates continuous smooth hand surfaces and curved anatomical arm profiles; `player-materials.mjs` supplies wood grain, leather pores, fabric weave, brushed metal and material roughness. Rounded shield rims, curved gauntlet plates and a shared studio reflection environment avoid the blocky low-poly appearance. One shared WebGL renderer renders the 3D equipment into Phaser canvas textures. A perspective camera adapts to the displayed canvas aspect ratio to avoid stretched hands on mobile. Equipment remains lit in depth, and the glove fingers wrap around the handle. Enemy sprites, the arena and the equipment portrait retain their existing art. Combat requires WebGL 2; the start screen reports a renderer initialization failure. Three.js is bundled locally with its MIT license in `vendor/THREE-LICENSE.txt`.
+
+`npm test` covers bone lengths, reachable poses, both held grips, the actual Three.js bone hierarchy, directional motion and continuous cuts. `npm run test:browser` checks 78 equipment/material combinations, all combat states, seven offhand visuals and mobile rendering. With the server running, `node tools/preview-3d.mjs` records the actual 3D renderer into `artifacts/3d-frames/` for animation review.
+
+ชุดเกราะเปลี่ยนวัสดุของแขนและถุงมือในโมเดล 3D การตายลดมือพร้อม fade ก่อนเปิดผลแพ้ หมวกและรองเท้าดูได้ในหน้าสวมอุปกรณ์ เพราะมุมมองต่อสู้ไม่เห็นส่วนเหล่านี้
 
 หน้าสวมอุปกรณ์ใช้ Phaser Scene และ `portrait.png` ภาพเต็มตัวใหม่สี่รูปลักษณ์ สัดส่วนรักษาตามภาพต้นฉบับและแสดงของแต่ละช่องที่สวม
 
@@ -47,7 +51,7 @@
 
 `npm test` ตรวจจังหวะปะทะ เฟรมแต่ละ action อุปกรณ์ ทิศป้องกัน และ game loop ทั้ง 6 ด่าน รวม stun, cooldown, ward, pause, retry และ daily rollover
 
-`npm ci && npm run test:browser` ตรวจ Chromium จริง (กำหนด `CHROMIUM_PATH` ได้; default `/usr/bin/chromium`) ตรวจ native frames สำหรับ 78 คู่ชุด/อาวุธ ทุก action, อาวุธรอง 7 แบบ, preview เต็มตัว, block-only cue ที่ซ่อนลูกศรและออร่าแดงเต้น, ท่าตายก่อนเปิดผล และจอมือถือ เก็บภาพใน `artifacts/` ใช้ `python tools/check-assets.py` ตรวจ RGBA และเฟรมไม่ว่าง
+`npm ci && npm run test:browser` ตรวจ Chromium จริง (กำหนด `CHROMIUM_PATH` ได้; default `/usr/bin/chromium`) ตรวจโมเดล 3D สำหรับ 78 คู่ชุด/อาวุธ และทุก action, อาวุธรอง 7 แบบ, preview เต็มตัว, block-only cue ที่ซ่อนลูกศรและออร่าแดงเต้น, ท่าตายก่อนเปิดผล และจอมือถือ เก็บภาพใน `artifacts/` ใช้ `python tools/check-assets.py` ตรวจ RGBA และเฟรมไม่ว่าง
 
 ## Campaign expansion / daily / camp
 

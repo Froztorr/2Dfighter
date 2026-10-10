@@ -239,40 +239,66 @@ test('first-person frames preserve directional contact and terminal states',asyn
   core.equip(save,'weapon','ember-staff');assert.equal(equipmentArt(save).twoHanded,true);assert.equal(equipmentArt(save).offhand,null);
 });
 
-test('combat rig keeps grips attached through every action and equipment combination',async()=>{
- const {samplePlayerRig,gripPoint,WEAPON_STYLES}=await import('./player-rig.mjs');
+test('3D arm IK preserves bone lengths and attaches both grips across combat actions',async()=>{
+ const {samplePlayerRig,gripPoint,RIGHT_WRIST,LEFT_WRIST,ARM_LENGTHS,SUPPORT_GRIP}=await import('./player-rig.mjs');
+ const {WEAPON_STYLES}=await import('./player-3d.mjs');
  const save=core.newSave();save.owned=Object.keys(core.ITEMS);
- assert.deepEqual(fps.playerAssets(save),[],'combat should not load generated animation atlases');
+ assert.deepEqual(fps.playerAssets(save),[]);
  for(const weapon of fps.PLAYER_WEAPONS){
-  assert.ok(WEAPON_STYLES[weapon],`missing weapon geometry: ${weapon}`);
-  save.equipment.weapon=weapon;
-  for(const offhand of [null,...Object.keys(core.ITEMS).filter(id=>core.ITEMS[id].slot==='offhand')]){
-   save.equipment.offhand=offhand;
-   for(const action of Object.keys(core.HERO_ACTIONS))for(const dir of Object.keys(core.DIR))for(let elapsed=0;elapsed<1200;elapsed+=17){
-    const pose=samplePlayerRig({save,action,dir,elapsed});
-    for(const side of ['left','right'])for(const joint of ['shoulder','elbow','wrist'])assert.ok(Object.values(pose[side][joint]).every(Number.isFinite));
-    assert.deepEqual(pose.right.wrist,gripPoint(pose.grip));
-    assert.deepEqual(pose.left.wrist,pose.art.twoHanded?gripPoint(pose.grip,0,25):gripPoint(pose.off));
-    if(pose.art.twoHanded)assert.equal(pose.art.offhand,null);
+  assert.ok(WEAPON_STYLES[weapon],`missing weapon geometry: ${weapon}`);save.equipment.weapon=weapon;
+  for(const action of Object.keys(core.HERO_ACTIONS))for(const dir of Object.keys(core.DIR))for(let elapsed=0;elapsed<1200;elapsed+=23){
+   const pose=samplePlayerRig({save,action,dir,elapsed});
+   for(const side of ['left','right']){
+    const arm=pose[side];for(const joint of ['shoulder','elbow','wrist'])assert.ok(arm[joint].toArray().every(Number.isFinite));
+    assert.ok(Math.abs(arm.shoulder.distanceTo(arm.elbow)-ARM_LENGTHS.upper)<1e-6);
+    assert.ok(Math.abs(arm.elbow.distanceTo(arm.wrist)-ARM_LENGTHS.forearm)<1e-6);
+    assert.ok(arm.reachError<1e-6,`${weapon}/${action}/${dir}/${elapsed}: arm target out of reach`);
    }
+   assert.ok(pose.right.wrist.distanceTo(gripPoint(pose.grip,RIGHT_WRIST))<1e-6);
+   assert.ok(pose.left.wrist.distanceTo(gripPoint(pose.leftGrip,LEFT_WRIST))<1e-6);
+   if(pose.art.twoHanded){assert.equal(pose.art.offhand,null);assert.ok(pose.leftGrip.position.distanceTo(gripPoint(pose.grip,SUPPORT_GRIP))<1e-6);}
   }
  }
 });
-test('rig strikes interpolate continuously, contact at 110 ms and settle into rest',async()=>{
- const {samplePlayerRig}=await import('./player-rig.mjs');const save=core.newSave();
- const samples=[];
+test('3D cuts travel in the requested direction, move elbows and torso, and remain continuous',async()=>{
+ const {samplePlayerRig,gripPoint}=await import('./player-rig.mjs');const {Vector3}=await import('./vendor/three.module.js');const save=core.newSave();
+ const contacts=[];
  for(const dir of ['left','right','up','down']){
   const sample=elapsed=>samplePlayerRig({save,action:'slash',dir,elapsed});
-  assert.equal(sample(110).contact,true);assert.equal(sample(109).contact,false);
-  samples.push(sample(110).grip);
+  assert.equal(sample(110).contact,true);assert.equal(sample(109).contact,false);contacts.push(sample(110).grip.position.toArray());
+  assert.ok(sample(109).right.wrist.distanceTo(sample(111).right.wrist)>.0015,'cut should keep moving through contact');
+  const start=sample(48),end=sample(185),a=gripPoint(start.grip,new Vector3(0,.49,0)),b=gripPoint(end.grip,new Vector3(0,.49,0));
+  if(dir==='right')assert.ok(b.x>a.x+.4);if(dir==='left')assert.ok(b.x<a.x-.4);
+  if(dir==='up')assert.ok(b.y>a.y+.6);if(dir==='down')assert.ok(b.y<a.y-.6);
+  assert.ok(start.right.elbow.distanceTo(end.right.elbow)>.04,'elbow should drive a cut');
+  assert.ok(start.right.shoulder.distanceTo(end.right.shoulder)>.012,'shoulder girdle should turn');
+  assert.ok(Math.abs(start.grip.position.z-end.grip.position.z)>.005||Math.abs(a.z-b.z)>.05,'cut must travel in depth');
   for(let elapsed=1;elapsed<=301;elapsed++){
-   const a=sample(elapsed-1).grip,b=sample(elapsed).grip;
-   assert.ok(Math.hypot(a[0]-b[0],a[1]-b[1])<5,`${dir} discontinuity at ${elapsed}`);
-   assert.ok(Math.abs(a[2]-b[2])<.1);
+   const a=sample(elapsed-1),b=sample(elapsed);
+   assert.ok(a.right.wrist.distanceTo(b.right.wrist)<.013,`${dir} wrist discontinuity at ${elapsed}`);
+   assert.ok(a.grip.quaternion.angleTo(b.grip.quaternion)<.09,`${dir} rotation discontinuity at ${elapsed}`);
+   assert.ok(a.right.elbow.distanceTo(b.right.elbow)<.015);
   }
  }
- assert.equal(new Set(samples.map(JSON.stringify)).size,4);
+ assert.equal(new Set(contacts.map(JSON.stringify)).size,4);
  assert.equal(samplePlayerRig({save,action:'death',elapsed:2000}).alpha,0);
- const idle=elapsed=>samplePlayerRig({save,elapsed,reducedMotion:true}).grip;
- assert.deepEqual(idle(0),idle(500));
+ const idle=elapsed=>samplePlayerRig({save,elapsed,reducedMotion:true}).grip.position.toArray();assert.deepEqual(idle(0),idle(500));
+});
+
+test('actual 3D bone hierarchy puts hands and equipment at the solved grips',async()=>{
+ const {Player3D}=await import('./player-3d.mjs');const {Vector3,Quaternion}=await import('./vendor/three.module.js');
+ const {gripPoint,LEFT_WRIST}=await import('./player-rig.mjs');
+ const model=new Player3D({render(){},renderLists:{dispose(){}}}),save=core.newSave();
+ try{
+  for(const weapon of ['rust-sword','greatsword','ember-staff'])for(const offhand of [null,'wood-shield','steel-shield','parry-dagger']){
+   save.equipment.weapon=weapon;save.equipment.offhand=offhand;
+   for(const dir of Object.keys(core.DIR))for(const action of ['slash','block','parry','death'])for(const elapsed of [0,48,110,185,300,1000]){
+    const pose=model.sync({save,action,dir,elapsed});
+    for(const side of ['left','right'])assert.ok(model[side].wrist.getWorldPosition(new Vector3()).distanceTo(pose[side].wrist)<1e-6);
+    assert.ok(model.weapon.getWorldPosition(new Vector3()).distanceTo(pose.grip.position)<1e-6);
+    assert.ok(model.weapon.getWorldQuaternion(new Quaternion()).angleTo(pose.grip.quaternion)<1e-6);
+    assert.ok(model.left.wrist.getWorldPosition(new Vector3()).distanceTo(gripPoint(pose.leftGrip,LEFT_WRIST))<1e-6);
+   }
+  }
+ }finally{model.destroy();}
 });
