@@ -1,6 +1,6 @@
 import { playerAssets } from './fps-player.mjs';
 import { createPhaserRenderer } from './phaser-renderer.mjs';
-import { HERO_ACTIONS, impactParticles, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
+import { STAFF_RUNES, strikeContacts, HERO_ACTIONS, impactParticles, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('scene'), background=document.createElement('canvas'), ctx = background.getContext('2d');
 background.width=480;background.height=800;
@@ -84,7 +84,7 @@ function hud() {
   if($('attackIcon').dataset.kind!==kind){$('attackIcon').innerHTML=cueIcons[kind];$('attackIcon').dataset.kind=kind;}
   cue.style.left='50%'; cue.style.top=`${(enemyPosition().y+(directional&&attack.dir==='up'?16:0))/4}%`;
   cue.classList.toggle('show', !!attack); cue.classList.toggle('danger', !!attack && attack.at-time <= 450);
-  if (s.magic) $('spellHint').textContent = ['circle','square','spiral'].map((k,i) => `${['○ FIRE','□ WARD','◎ NOVA'][i]} ${cooldown[k]>time ? ((cooldown[k]-time)/1000).toFixed(1)+'s' : 'READY'}`).join(' · ');
+  if (s.magic) $('spellHint').textContent = Object.entries(STAFF_RUNES).map(([k,rune]) => `${rune.glyph} ${rune.name} ${cooldown[k]>time ? ((cooldown[k]-time)/1000).toFixed(1)+'s' : 'READY'}`).join(' · ');
 }
 function hit(damage, color = '#fff0ae',dir=heroAction.dir) {
   if (phase !== 'combat') return;
@@ -134,7 +134,10 @@ function defensive(dir,type) {
 function slash(dir) {
   if (phase!=='combat' || paused || blocking || time<playerStunned || time<nextSlash) return;
   nextSlash = time+300;animateHero('slash',dir);
-  if (!defensive(dir,'slash'))pendingSlash={at:time+110,dir,damage:stats(save).attack};
+  if (!defensive(dir,'slash')){
+    const contacts=strikeContacts(save);pendingSlash=null;
+    for(const contact of contacts.toReversed())pendingSlash={...contact,at:time+contact.at,dir,followUp:pendingSlash};
+  }
 }
 function evade(dir) {
   if (phase!=='combat' || paused || time<playerStunned || time<nextDodge) return;
@@ -146,13 +149,13 @@ function evade(dir) {
 function cast(points) {
   if (phase!=='combat' || paused || blocking || time<playerStunned) return;
   const spell = recognize(points);
-  if (!spell) { say('วาด ○ วงกลม · □ สี่เหลี่ยม · ◎ ก้นหอย'); return; }
+  if (!spell) { say('วาด ○ ไฟ · V เกราะเวท · Z nova'); return; }
   if (cooldown[spell]>time) { say('Spell cooling down'); return; }
-  cooldown[spell] = time + ({circle:1800,square:6500,spiral:4500}[spell]);
+  cooldown[spell] = time + STAFF_RUNES[spell].cooldown;
   animateHero('cast','up');
-  if (spell==='square') { shield = 2; say('WARD · blocks the next 2 hits'); }
-  else { say(spell==='spiral'?'ARCANE NOVA':'EMBER ORB');hit(Math.round(stats(save).attack*(spell==='spiral'?4:2.5)), '#bdabff'); }
-  effects.push({x:140,y:210,text:spell==='square'?'◇':'✺',color:'#bb9aff',until:time+850});
+  if (spell==='chevron') { shield = 2; say('WARD · blocks the next 2 hits'); }
+  else { say(spell==='bolt'?'ARCANE NOVA':'EMBER ORB');hit(Math.round(stats(save).attack*STAFF_RUNES[spell].multiplier), '#bdabff'); }
+  effects.push({x:140,y:210,text:spell==='chevron'?'◇':'✺',color:'#bb9aff',until:time+850});
 }
 function setBlocking(value) {
   const previous=blocking;blocking = !!value && stats(save).canBlock && phase==='combat' && !paused && time>=playerStunned;
@@ -345,7 +348,7 @@ function draw(){
   if(flash>time){const glow=ctx.createRadialGradient(120,200,40,120,200,240);glow.addColorStop(0,'#8d001000');glow.addColorStop(1,`rgba(220,24,43,${(flash-time)/420*.8})`);ctx.fillStyle=glow;ctx.fillRect(0,0,240,400);}
   if(phase==='walking')rect(0,0,240,400,`rgba(12,10,20,${Math.sin((transition-time)/1000*Math.PI)*.65})`);
 }
-function resolvePlayerStrike(){if(pendingSlash&&time>=pendingSlash.at){const strike=pendingSlash;pendingSlash=null;hit(strike.damage,'#fff0ae',strike.dir);}}
+function resolvePlayerStrike(){while(pendingSlash&&time>=pendingSlash.at){const strike=pendingSlash;pendingSlash=strike.followUp;hit(strike.damage,'#fff0ae',strike.dir);if(phase!=='combat'){pendingSlash=null;break;}}}
 function loop(now){let dt=Math.min(50,now-last);last=now;updateMini(now);if(now>=dailyCheck){dailyCheck=now+1000;if(paused&&['quests','camp'].includes(tab)&&save.daily?.day!==dayKey()){daily(save);persist();if(!mini)renderPanel();}}if(!paused && phase!=='home'&&!document.hidden){const stopped=Math.min(hitStop,dt);hitStop-=stopped;dt-=stopped;time+=dt;
   if(phase==='dead'&&time>=deathPanelAt)openPanel();
   if(phase==='walking'&&time>=transition)finishRoom();

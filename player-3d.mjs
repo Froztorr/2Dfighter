@@ -126,7 +126,8 @@ function makeArm(side,mats){
 export class Player3D {
  constructor(renderer=combatWebGLRenderer(),sprites={}){
   this.sprites=sprites;
-  this.renderer=renderer;this.scene=new THREE.Scene();this.camera=new THREE.PerspectiveCamera(75,480/800,.025,8);
+  this.renderer=renderer;this.scene=new THREE.Scene();this.camera=new THREE.PerspectiveCamera(96,480/800,.025,8);
+  this.camera.position.y=.055;
   this.scene.environment=studioEnvironment;this.scene.environmentIntensity=.55;this.scene.add(new THREE.HemisphereLight(0xd6e8ff,0x312537,.7));
   const keyLight=new THREE.DirectionalLight(0xffe9c2,2);keyLight.position.set(-1.5,2,1.3);this.scene.add(keyLight);
   const rim=new THREE.DirectionalLight(0x83b9ff,.7);rim.position.set(1,.4,-1);this.scene.add(rim);
@@ -152,7 +153,7 @@ export class Player3D {
  }
  sync(state){
   const displayAspect=Number.isFinite(state.aspect)&&state.aspect>0?.6*state.aspect:.6;
-  if(this.camera.aspect!==displayAspect){this.camera.aspect=displayAspect;this.camera.fov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(75/2))*.6/displayAspect));this.camera.updateProjectionMatrix();}
+  if(this.camera.aspect!==displayAspect){this.camera.aspect=displayAspect;this.camera.fov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(96/2))*.6/displayAspect));this.camera.updateProjectionMatrix();}
   const pose=samplePlayerRig(state);this.pose=pose;this.equipment(pose.art);
   this.torso.position.copy(pose.torso.position);this.torso.quaternion.copy(pose.torso.quaternion);
   for(const side of['right','left']){
