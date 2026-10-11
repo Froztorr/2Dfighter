@@ -3,6 +3,7 @@ import { RoomEnvironment } from './vendor/RoomEnvironment.js';
 import { sculptedHand, organicLimb, curvedHandPlate } from './player-sculpt.mjs';
 import { surfaceMaterial, changeSurface } from './player-materials.mjs';
 import { ITEMS } from './core.mjs';
+import { makePixelEquipment } from './pixel-equipment.mjs';
 import { ARM_LENGTHS, RIGHT_WRIST, LEFT_WRIST, samplePlayerRig } from './player-rig.mjs';
 
 let sharedRenderer,studioEnvironment;
@@ -123,7 +124,8 @@ function makeArm(side,mats){
  wrist.add(makeHand(side,mats));return {upper,elbow,wrist,plates};
 }
 export class Player3D {
- constructor(renderer=combatWebGLRenderer()){
+ constructor(renderer=combatWebGLRenderer(),sprites={}){
+  this.sprites=sprites;
   this.renderer=renderer;this.scene=new THREE.Scene();this.camera=new THREE.PerspectiveCamera(75,480/800,.025,8);
   this.scene.environment=studioEnvironment;this.scene.environmentIntensity=.55;this.scene.add(new THREE.HemisphereLight(0xd6e8ff,0x312537,.7));
   const keyLight=new THREE.DirectionalLight(0xffe9c2,2);keyLight.position.set(-1.5,2,1.3);this.scene.add(keyLight);
@@ -136,8 +138,8 @@ export class Player3D {
  equipment(art){
   const signature=[art.weapon,art.offhand,art.look,art.armorHue].join(':');if(signature===this.signature)return;this.signature=signature;
   for(const object of[this.weapon,this.offhand])if(object)disposeGroup(object);
-  this.weapon=makeWeapon(art.weapon);this.weapon.position.copy(RIGHT_WRIST).multiplyScalar(-1);this.right.wrist.add(this.weapon);
-  this.offhand=art.offhand?(ITEMS[art.offhand]?.shield?makeShield(art.offhand):makeWeapon(art.offhand)):new THREE.Group();this.offhand.position.copy(LEFT_WRIST).multiplyScalar(-1);
+  this.weapon=makePixelEquipment(art.weapon,this.sprites,WEAPON_STYLES[art.weapon]?.length)||makeWeapon(art.weapon);this.weapon.position.copy(RIGHT_WRIST).multiplyScalar(-1);this.right.wrist.add(this.weapon);
+  this.offhand=art.offhand?(makePixelEquipment(art.offhand,this.sprites,WEAPON_STYLES[art.offhand]?.length)||(ITEMS[art.offhand]?.shield?makeShield(art.offhand):makeWeapon(art.offhand))):new THREE.Group();this.offhand.position.copy(LEFT_WRIST).multiplyScalar(-1);
   if(ITEMS[art.offhand]?.shield)this.offhand.position.z-=.065;this.left.wrist.add(this.offhand);
   const palette=[[0x7b7164,0x60432d,0x967c61],[0x333a42,0x493b30,0xa4afba],[0x3e4537,0x493526,0x8c7655],[0x3a304c,0x413349,0xa594c3]][art.look];
   ['sleeve','glove','plate'].forEach((name,i)=>{this.mats[name].color.setHex(palette[i]);if(art.armorHue)this.mats[name].color.offsetHSL(art.armorHue/360,0,0);changeSurface(this.mats[name],name==='plate'?'steel':name==='glove'?'leather':art.look===2?'leather':'cloth');this.mats[name].metalness=art.look===1&&name==='plate'?.82:0;});

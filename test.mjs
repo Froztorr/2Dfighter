@@ -302,3 +302,22 @@ test('actual 3D bone hierarchy puts hands and equipment at the solved grips',asy
   }
  }finally{model.destroy();}
 });
+
+
+test('pixel equipment extrusion has real thickness, open holes and outward surface normals',async()=>{
+ const {extrudePixels,solidPixelMask}=await import('./pixel-equipment.mjs');
+ const specks=new Uint8Array(6*4);for(const i of[0,1,5])specks.set([100,100,100,255],i*4);const cleaned=solidPixelMask(specks,6,1);assert.equal(cleaned[5*4+3],0);assert.equal(cleaned[3],255);assert.equal(cleaned[7],255);
+ const data=new Uint8Array(3*3*4);for(let i=0;i<9;i++){data.set([140,90,30,255],i*4);}data[4*4+3]=0;
+ const solid=extrudePixels(data,3,3,{depth:.04,length:.3,shield:true});
+ for(const[name,z]of[['front',.02],['back',-.02]]){
+  const g=solid[name];for(let i=0;i<g.attributes.position.count;i++){
+   assert.ok(Math.abs(g.attributes.position.getZ(i)-z)<1e-7);
+   assert.ok(g.attributes.normal.getZ(i)*Math.sign(z)>.99);
+  }
+  // The central transparent pixel has no surface triangles.
+  const p=g.attributes.position;for(let i=0;i<p.count;i+=3){const x=(p.getX(i)+p.getX(i+1)+p.getX(i+2))/3,y=(p.getY(i)+p.getY(i+1)+p.getY(i+2))/3;assert.ok(Math.abs(x)>=.05||Math.abs(y)>=.05);}
+ }
+ assert.equal(solid.walls.attributes.position.count,16*6); // 12 exterior edges + 4 inside the hole.
+ assert.ok(solid.walls.attributes.color.count>0);
+ for(const g of Object.values(solid))g.dispose();
+});

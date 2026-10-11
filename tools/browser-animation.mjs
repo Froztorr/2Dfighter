@@ -25,7 +25,7 @@ try{
   await new Promise(resolve=>{class Gallery extends Phaser.Scene{create(){
    const examples=[['idle',0,'right'],['slash',82,'right'],['slash',110,'left'],['slash',110,'up'],['slash',110,'down'],['guard',0,'right'],['cast',230,'up'],['death',700,'right']],armors=[null,'scale-mail','leather-vest','mage-robe','frost-plate','inferno-robe'];
    const verify=new FirstPersonPlayer(this,sprites),state=newSave();verify.model.renderer.setSize(180,300);state.owned=Object.keys(ITEMS);
-   for(const armor of armors)for(const weapon of PLAYER_WEAPONS){state.equipment.armor=armor;state.equipment.weapon=weapon;state.equipment.offhand=ITEMS[weapon].hands===2?null:'wood-shield';for(const action of ['slash'])for(const elapsed of [110]){verify.sync({save:state,action,dir:'left',elapsed});if(!verify.image.visible)throw Error('Missing held weapon '+weapon+'/'+armor);if(!verify.pose||!Number.isFinite(verify.pose.right.wrist.x))throw Error('Missing joint pose');if(verify.art.weapon!==weapon)throw Error('Equipment mismatch');}report.push({weapon,armor,key:verify.image.texture.key});}
+   for(const armor of armors)for(const weapon of PLAYER_WEAPONS){state.equipment.armor=armor;state.equipment.weapon=weapon;state.equipment.offhand=ITEMS[weapon].hands===2?null:'wood-shield';for(const action of ['slash'])for(const elapsed of [110]){verify.sync({save:state,action,dir:'left',elapsed});if(!verify.image.visible)throw Error('Missing held weapon '+weapon+'/'+armor);if(!verify.pose||!Number.isFinite(verify.pose.right.wrist.x))throw Error('Missing joint pose');if(verify.art.weapon!==weapon)throw Error('Equipment mismatch');const object=verify.model.weapon;if(!object.userData.pixelEquipment||object.userData.sourceIcon!==ITEMS[weapon].icon||object.userData.sourceAtlas!==(ITEMS[weapon].atlas||'gear'))throw Error('Weapon must use its original inventory art');}report.push({weapon,armor,key:verify.image.texture.key});}
    for(const weapon of ['iron-sword','greatsword','ember-staff']){
     state.equipment.weapon=weapon;state.equipment.offhand=ITEMS[weapon].hands===2?null:'wood-shield';
     for(const action of Object.keys(HERO_ACTIONS)){verify.sync({save:state,action,dir:'right',elapsed:110});if(verify.pose.action!==action)throw Error('Combat state did not render');}
@@ -56,10 +56,11 @@ try{
   assert.equal(await page.evaluate(()=>window.__animationTest('renderer.inspect().hero.pose.action')), 'block');
   await page.evaluate(()=>window.__animationTest('releaseGuard();stamina=100'));
  }
- // Weapons/offhands really change artwork; shields show their held rear surface and attached grip.
+ // Weapons/offhands use the inventory atlas on solid extruded geometry.
  const offKeys=new Set();for(const off of ['wood-shield','steel-shield','guardian-shield','frost-shield','parry-dagger','assassin-dagger','spider-claw']){
   await page.evaluate(off=>window.__animationTest(`equip(save,'offhand','${off}');animateHero('idle');`),off);await page.waitForTimeout(25);
   await page.waitForFunction(off=>window.__animationTest('renderer.inspect().hero.art.offhand')===off,off);
+  assert.equal(await page.evaluate(()=>window.__animationTest('renderer.inspect().hero.model.offhand.userData.pixelEquipment')),true);
   offKeys.add(await page.evaluate(()=>window.__animationTest('renderer.inspect().hero.texture.canvas.toDataURL()')));
  }assert.equal(offKeys.size,7);
  await page.evaluate(()=>window.__animationTest(`enter(1);hp=1;attack={dir:'down',kind:'normal',at:time};resolveAttack();hud();`));

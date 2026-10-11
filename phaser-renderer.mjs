@@ -20,7 +20,7 @@ export class FirstPersonPlayer {
   constructor(scene,sprites){
     this.scene=scene;this.sprites=sprites;this.root=scene.add.container(0,0);
     this.key=`player-3d:${rigSerial++}`;this.texture=scene.textures.createCanvas(this.key,480,800);
-    this.model=new Player3D();this.image=scene.add.image(0,0,this.key).setOrigin(0).setDisplaySize(240,400);
+    this.model=new Player3D(undefined,sprites);this.image=scene.add.image(0,0,this.key).setOrigin(0).setDisplaySize(240,400);
     this.shade=scene.add.graphics();this.root.add([this.image,this.shade]);
     scene.events.once('shutdown',()=>this.destroy());
   }
