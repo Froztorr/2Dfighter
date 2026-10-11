@@ -5,28 +5,34 @@ const hands=new Map();
 const smoothMin=(a,b,k)=>{const h=Math.max(k-Math.abs(a-b),0)/k;return Math.min(a,b)-h*h*k*.25;};
 function capsuleDistance(x,y,z,a,b,r){const dx=b[0]-a[0],dy=b[1]-a[1],dz=b[2]-a[2],t=Math.max(0,Math.min(1,((x-a[0])*dx+(y-a[1])*dy+(z-a[2])*dz)/(dx*dx+dy*dy+dz*dz)));return Math.hypot(x-a[0]-dx*t,y-a[1]-dy*t,z-a[2]-dz*t)-r;}
 function ellipsoid(x,y,z,c,r){return (Math.hypot((x-c[0])/r[0],(y-c[1])/r[1],(z-c[2])/r[2])-1)*Math.min(...r);}
-export function sculptedHand(side){
- if(hands.has(side))return hands.get(side).clone();
+export function sculptedHand(side,{radiusX=.014,radiusZ=.012,round=false}={}){
+ const key=[side,radiusX,radiusZ,round].join(':');
+ if(hands.has(key))return hands.get(key).clone();
  const sign=side==='right'?1:-1,segments=[];
  for(let i=0;i<4;i++){
   const y=.025-i*.016,length=i===0||i===3?.9:1;
-  const a=[sign*.053,y,.023],b=[sign*.042,y,-.007],c=[sign*.018,y,-.025*length],d=[-sign*.018,y,-.005];
-  segments.push([a,b,.008],[b,c,.0075],[c,d,.0065]);
+  const rx=radiusX,rz=radiusZ;
+  const points=[[sign*(rx+.022),y,rz+.007],[sign*(rx+.011),y,-rz*.2],[sign*rx*.6,y,-rz-.007],[-sign*(rx+.007),y,-rz*.35],[-sign*(rx+.007),y,rz*.7],[-sign*.003,y,rz+.007]];
+  for(let j=0;j<points.length-1;j++)segments.push([points[j],points[j+1],j<2?.008:.007]);
  }
- segments.push([[sign*.042,.031,.031],[sign*.02,.043,.023],.0105],[[sign*.02,.043,.023],[-sign*.009,.018,.02],.009]);
+ segments.push([[sign*(radiusX+.023),.032,radiusZ+.014],[sign*.015,.042,radiusZ+.017],.0105],[[sign*.015,.042,radiusZ+.017],[-sign*.013,.021,radiusZ+.010],.009]);
  const size=64,half=.084,field=new MarchingCubes(size,new THREE.MeshBasicMaterial(),false,false,16000);field.isolation=0;
  for(let z=0;z<size;z++)for(let y=0;y<size;y++)for(let x=0;x<size;x++){
   const px=(x/size*2-1)*half,py=(y/size*2-1)*half,pz=(z/size*2-1)*half;
-  let d=ellipsoid(px,py,pz,[sign*.032,.001,.025],[.025,.04,.019]);
+  let d=ellipsoid(px,py,pz,[sign*(radiusX+.019),.001,radiusZ+.016],[.025,.04,.019]);
   d=smoothMin(d,ellipsoid(px,py,pz,[sign*.031,-.045,.025],[.019,.031,.016]),.01);
   for(const[a,b,r]of segments)d=smoothMin(d,capsuleDistance(px,py,pz,a,b,r),.0035);
+  // Subtract the actual shaft cross-section: fingers touch its surface without cutting through it.
+  const dx=Math.abs(px)-radiusX-.0003,dz=Math.abs(pz)-radiusZ-.0003;
+  const shaft=round?(Math.hypot(px/(radiusX+.0003),pz/(radiusZ+.0003))-1)*Math.min(radiusX,radiusZ):Math.hypot(Math.max(dx,0),Math.max(dz,0))+Math.min(Math.max(dx,dz),0);
+  d=Math.max(d,-shaft);
   field.field[z*size*size+y*size+x]=-d*10000;
  }
  field.update();
  const count=field.geometry.drawRange.count,positions=field.geometry.attributes.position.array.slice(0,count*3),normals=field.geometry.attributes.normal.array.slice(0,count*3),uv=new Float32Array(count*2);
  for(let i=0;i<count;i++){uv[i*2]=positions[i*3]*.5+.5;uv[i*2+1]=positions[i*3+1]*.5+.5;}
  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.BufferAttribute(positions,3));geometry.setAttribute('normal',new THREE.BufferAttribute(normals,3));geometry.setAttribute('uv',new THREE.BufferAttribute(uv,2));geometry.scale(half,half,half);geometry.computeBoundingSphere();
- field.geometry.dispose();field.material.dispose();hands.set(side,geometry);return geometry.clone();
+ field.geometry.dispose();field.material.dispose();hands.set(key,geometry);return geometry.clone();
 }
 export function organicLimb(length,profile,flatten=.82){
  const curve=new THREE.SplineCurve(profile.map(([t,r])=>new THREE.Vector2(t,r))),radial=48,rings=36,positions=[],uv=[],indices=[];

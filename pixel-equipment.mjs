@@ -39,6 +39,45 @@ export function extrudePixels(rgba,width,height,{grip=[.5,.5],tip=[.5,0],length=
  const geometry=(vertices,uv,vertexColors)=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));if(uv)g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));if(vertexColors)g.setAttribute('color',new THREE.Float32BufferAttribute(vertexColors,3));g.computeVertexNormals();return g;};
  return {front:geometry(front,uvFront),back:geometry(back,uvBack),walls:geometry(walls,null,colors)};
 }
+// Recenter the painted hilt and fit the contact band to the anatomical fist.
+// Atlas grip landmarks are approximate; source artwork can miss the wrist axis by centimetres.
+export function gripSection(geometry,y){
+ const p=geometry.attributes.position,x=[];
+ for(let i=0;i<p.count;i+=3)for(let j=0;j<3;j++){
+  const a=i+j,b=i+(j+1)%3,ya=p.getY(a),yb=p.getY(b);
+  if((ya<=y&&yb>y)||(yb<=y&&ya>y))x.push(p.getX(a)+(p.getX(b)-p.getX(a))*(y-ya)/(yb-ya));
+ }
+ return x.length?{center:(Math.min(...x)+Math.max(...x))/2,halfWidth:(Math.max(...x)-Math.min(...x))/2}:null;
+}
+function splitAtGripRows(geometry,low,high){
+ const names=['position',...['uv','color'].filter(n=>geometry.hasAttribute(n))],attributes=names.map(n=>geometry.getAttribute(n)),sizes=attributes.map(a=>a.itemSize),offsets=[];let size=0;for(const n of sizes){offsets.push(size);size+=n;}
+ const out=names.map(()=>[]),cuts=[];for(let y=low;y<=high;y+=.003)cuts.push(y);
+ const clip=(poly,y,below)=>{const result=[];for(let i=0;i<poly.length;i++){const a=poly[i],b=poly[(i+1)%poly.length],ia=below?a[1]<=y:a[1]>=y,ib=below?b[1]<=y:b[1]>=y;if(ia)result.push(a);if(ia!==ib){const t=(y-a[1])/(b[1]-a[1]);result.push(a.map((v,k)=>v+(b[k]-v)*t));}}return result;};
+ const emit=poly=>{for(let i=1;i<poly.length-1;i++)for(const v of[poly[0],poly[i],poly[i+1]])for(let j=0;j<names.length;j++)out[j].push(...v.slice(offsets[j],offsets[j]+sizes[j]));};
+ for(let i=0;i<attributes[0].count;i+=3){
+  let rest=[0,1,2].map(j=>attributes.flatMap(a=>Array.from(a.array.subarray((i+j)*a.itemSize,(i+j+1)*a.itemSize))));
+  for(const y of cuts){if(!rest.length)break;const min=Math.min(...rest.map(v=>v[1])),max=Math.max(...rest.map(v=>v[1]));if(y<=min||y>=max)continue;emit(clip(rest,y,true));rest=clip(rest,y,false);}
+  emit(rest);
+ }
+ names.forEach((n,i)=>geometry.setAttribute(n,new THREE.Float32BufferAttribute(out[i],sizes[i])));
+ geometry.deleteAttribute('normal');geometry.computeVertexNormals();
+}
+export function fitEquipmentGrip(geometries,twoHanded=false){
+ const front=geometries.front,origin=gripSection(front,0);if(!origin)return;
+ const low=twoHanded?-.18:-.055,high=.035,fade=.035,step=.002,sections=[];
+ for(let y=low-fade;y<=high+fade+step;y+=step)sections.push(gripSection(front,y));
+ for(const g of Object.values(geometries)){
+  splitAtGripRows(g,low-fade,high+fade);
+  const p=g.attributes.position;
+  for(let i=0;i<p.count;i++){
+   const y=p.getY(i),x=p.getX(i),index=Math.max(0,Math.min(sections.length-1,Math.round((y-low+fade)/step))),section=sections[index];
+   let weight=Math.min(1,(y-low+fade)/fade,(high+fade-y)/fade);weight=Math.max(0,weight);weight=weight*weight*(3-2*weight);
+   const fitted=section&&section.halfWidth>.001?(x-section.center)*.014/section.halfWidth:x-origin.center;
+   p.setX(i,(x-origin.center)*(1-weight)+fitted*weight);
+  }
+  g.computeVertexNormals();
+ }
+}
 // Ignore isolated atlas specks and detached glow particles in the physical silhouette.
 export function solidPixelMask(rgba,width,height){
  const seen=new Uint8Array(width*height);let largest=[];
@@ -76,6 +115,7 @@ function sourceAsset(id,sprites,length){
    const p=g.attributes.position;for(let i=0;i<p.count;i++)if(p.getY(i)<0)p.setY(i,p.getY(i)*(-.19/minimum));g.computeVertexNormals();
   }
  }
+ if(!item.shield)fitEquipmentGrip(geometries,item.hands===2);
  const asset={texture,geometries,atlas:item.atlas||'gear',icon:item.icon};cache.set(id,asset);return asset;
 }
 export function makePixelEquipment(id,sprites,length){
@@ -91,6 +131,6 @@ export function makePixelEquipment(id,sprites,length){
   const grip=new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,.105,24),new THREE.MeshLambertMaterial({color:0x50382b}));grip.position.z=.065;root.add(grip);
   for(const y of[-.053,.053]){const post=new THREE.Mesh(new THREE.CylinderGeometry(.007,.007,.065,16),new THREE.MeshLambertMaterial({color:0x88734d}));post.rotation.x=Math.PI/2;post.position.set(0,y,.033);root.add(post);}
  }
- root.userData={item:id,sourceAtlas:asset.atlas,sourceIcon:asset.icon,pixelEquipment:true};
+ root.userData={item:id,sourceAtlas:asset.atlas,sourceIcon:asset.icon,pixelEquipment:true,gripProfile:{radiusX:ITEMS[id].shield?.012:.014,radiusZ:ITEMS[id].shield?.012:ITEMS[id].magic?.0175:.012,round:!!ITEMS[id].shield}};
  return root;
 }

@@ -321,3 +321,29 @@ test('pixel equipment extrusion has real thickness, open holes and outward surfa
  assert.ok(solid.walls.attributes.color.count>0);
  for(const g of Object.values(solid))g.dispose();
 });
+
+test('closed glove encloses the shaft on every side without passing through its contact volume',async()=>{
+ const {sculptedHand}=await import('./player-sculpt.mjs');
+ for(const side of ['right','left'])for(const profile of [{radiusX:.014,radiusZ:.012},{radiusX:.014,radiusZ:.0175},{radiusX:.012,radiusZ:.012,round:true}]){
+  const g=sculptedHand(side,profile),p=g.attributes.position,counts=[0,0,0,0];
+  for(let i=0;i<p.count;i++){
+   const x=p.getX(i),y=p.getY(i),z=p.getZ(i);if(y<-.027||y>.031)continue;
+   const inside=profile.round?Math.hypot(x/profile.radiusX,z/profile.radiusZ)<.82:Math.abs(x)<profile.radiusX-.002&&Math.abs(z)<profile.radiusZ-.002;
+   assert.equal(inside,false,'glove penetrates held shaft');
+   if(Math.abs(x)<profile.radiusX&&z>profile.radiusZ)counts[0]++;
+   if(Math.abs(x)<profile.radiusX&&z<-profile.radiusZ)counts[1]++;
+   if(x>profile.radiusX&&Math.abs(z)<profile.radiusZ)counts[2]++;
+   if(x<-profile.radiusX&&Math.abs(z)<profile.radiusZ)counts[3]++;
+  }
+  assert.ok(counts.every(n=>n>30),'fingers must enclose the front, rear and both sides');g.dispose();
+ }
+});
+
+test('inventory hilt is centered on the physical grip for both hands',async()=>{
+ const {extrudePixels,fitEquipmentGrip,gripSection}=await import('./pixel-equipment.mjs');
+ const data=new Uint8Array(10*20*4);for(let y=0;y<20;y++)for(let x=6;x<9;x++)data.set([90,50,20,255],(y*10+x)*4);
+ const g=extrudePixels(data,10,20,{grip:[.5,.5],length:.6,depth:.024,shield:true});
+ assert.ok(gripSection(g.front,0).center>.1);fitEquipmentGrip(g,true);
+ for(const y of [0,-.125]){const s=gripSection(g.front,y);assert.ok(Math.abs(s.center)<.0001);assert.ok(Math.abs(s.halfWidth-.014)<.0001);}
+ for(const mesh of Object.values(g))mesh.dispose();
+});
