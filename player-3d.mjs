@@ -3,6 +3,7 @@ import { RoomEnvironment } from './vendor/RoomEnvironment.js';
 import { sculptedHand, organicLimb, curvedHandPlate } from './player-sculpt.mjs';
 import { surfaceMaterial, changeSurface } from './player-materials.mjs';
 import { ITEMS } from './core.mjs';
+import { makePixelEquipment } from './pixel-equipment.mjs';
 import { ARM_LENGTHS, RIGHT_WRIST, LEFT_WRIST, samplePlayerRig } from './player-rig.mjs';
 
 let sharedRenderer,studioEnvironment;
@@ -103,8 +104,8 @@ function makeShield(id){
 function makeHand(side,mats){
  const root=new THREE.Group(),s=side==='right'?1:-1,offset=side==='right'?RIGHT_WRIST:LEFT_WRIST;
  const palm=new THREE.Group();palm.position.copy(offset).multiplyScalar(-1);root.add(palm);
- mesh(palm,sculptedHand(side),mats.glove);
- const back=mesh(palm,curvedHandPlate(),mats.plate,[s*.033,.001,.043]);back.userData.armorDetail=true;
+ root.userData.gripMesh=mesh(palm,sculptedHand(side),mats.glove);root.userData.side=side;
+ const back=mesh(palm,curvedHandPlate(),mats.plate,[s*.033,.001,.053]);back.userData.armorDetail=true;
  for(let i=0;i<4;i++){
   const knuckle=mesh(palm,new THREE.CapsuleGeometry(.0085,.008,8,24),mats.plate,[s*.043,.025-i*.016,-.006]);knuckle.rotation.z=Math.PI/2;knuckle.userData.armorDetail=true;
   // A subtle stitched line along each leather finger, with rounded thread.
@@ -120,10 +121,11 @@ function makeArm(side,mats){
  const plates=[mesh(elbow,organicLimb(ARM_LENGTHS.forearm,[[.04,.052],[.22,.058],[.51,.05],[.81,.039],[.96,.032]],.88),mats.plate)];
  for(const y of [.065,.26]){const radius=y<.1?.055:.038;const lip=mesh(elbow,new THREE.TorusGeometry(radius,.0018,10,48),mats.trim,[0,y,0]);lip.rotation.x=Math.PI/2;lip.scale.y=.87;plates.push(lip);}
  cylinder(elbow,.031,.032,.018,mats.trim,[0,ARM_LENGTHS.forearm-.006,0],48).scale.z=.88;
- wrist.add(makeHand(side,mats));return {upper,elbow,wrist,plates};
+ const hand=makeHand(side,mats);wrist.add(hand);return {upper,elbow,wrist,plates,hand};
 }
 export class Player3D {
- constructor(renderer=combatWebGLRenderer()){
+ constructor(renderer=combatWebGLRenderer(),sprites={}){
+  this.sprites=sprites;
   this.renderer=renderer;this.scene=new THREE.Scene();this.camera=new THREE.PerspectiveCamera(75,480/800,.025,8);
   this.scene.environment=studioEnvironment;this.scene.environmentIntensity=.55;this.scene.add(new THREE.HemisphereLight(0xd6e8ff,0x312537,.7));
   const keyLight=new THREE.DirectionalLight(0xffe9c2,2);keyLight.position.set(-1.5,2,1.3);this.scene.add(keyLight);
@@ -136,9 +138,13 @@ export class Player3D {
  equipment(art){
   const signature=[art.weapon,art.offhand,art.look,art.armorHue].join(':');if(signature===this.signature)return;this.signature=signature;
   for(const object of[this.weapon,this.offhand])if(object)disposeGroup(object);
-  this.weapon=makeWeapon(art.weapon);this.weapon.position.copy(RIGHT_WRIST).multiplyScalar(-1);this.right.wrist.add(this.weapon);
-  this.offhand=art.offhand?(ITEMS[art.offhand]?.shield?makeShield(art.offhand):makeWeapon(art.offhand)):new THREE.Group();this.offhand.position.copy(LEFT_WRIST).multiplyScalar(-1);
+  this.weapon=makePixelEquipment(art.weapon,this.sprites,WEAPON_STYLES[art.weapon]?.length)||makeWeapon(art.weapon);this.weapon.position.copy(RIGHT_WRIST).multiplyScalar(-1);this.right.wrist.add(this.weapon);
+  this.offhand=art.offhand?(makePixelEquipment(art.offhand,this.sprites,WEAPON_STYLES[art.offhand]?.length)||(ITEMS[art.offhand]?.shield?makeShield(art.offhand):makeWeapon(art.offhand))):new THREE.Group();this.offhand.position.copy(LEFT_WRIST).multiplyScalar(-1);
   if(ITEMS[art.offhand]?.shield)this.offhand.position.z-=.065;this.left.wrist.add(this.offhand);
+  for(const [arm,object]of [[this.right,this.weapon],[this.left,art.twoHanded?this.weapon:this.offhand]]){
+   const profile=object.userData.gripProfile||{radiusX:.014,radiusZ:.012},key=JSON.stringify(profile);
+   if(arm.hand.userData.profile!==key){const mesh=arm.hand.userData.gripMesh;mesh.geometry.dispose();mesh.geometry=sculptedHand(arm.hand.userData.side,profile);arm.hand.userData.profile=key;arm.hand.userData.gripProfile=profile;}
+  }
   const palette=[[0x7b7164,0x60432d,0x967c61],[0x333a42,0x493b30,0xa4afba],[0x3e4537,0x493526,0x8c7655],[0x3a304c,0x413349,0xa594c3]][art.look];
   ['sleeve','glove','plate'].forEach((name,i)=>{this.mats[name].color.setHex(palette[i]);if(art.armorHue)this.mats[name].color.offsetHSL(art.armorHue/360,0,0);changeSurface(this.mats[name],name==='plate'?'steel':name==='glove'?'leather':art.look===2?'leather':'cloth');this.mats[name].metalness=art.look===1&&name==='plate'?.82:0;});
   this.scene.traverse(o=>{if(o.userData.armorDetail)o.visible=art.look===1;});
