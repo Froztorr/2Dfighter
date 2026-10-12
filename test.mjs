@@ -58,16 +58,12 @@ test('opposite slashes parry; matching dodges evade, only inside the timing wind
   assert.equal(core.defend('up','down','slash',451), null);
   assert.equal(core.defend('up','down','slash',-1), null);
 });
-test('gestures distinguish a line, closed circle, square, and spiral', () => {
-  assert.equal(typeof core.recognize, 'function');
-  const circle = Array.from({length:65},(_,i)=>[100+70*Math.cos(i*Math.PI/32),100+70*Math.sin(i*Math.PI/32)]);
-  const spiral = Array.from({length:100},(_,i)=>[100+(10+i*.7)*Math.cos(i*Math.PI/24),100+(10+i*.7)*Math.sin(i*Math.PI/24)]);
-  const square = [[20,20],[80,20],[140,20],[140,80],[140,140],[80,140],[20,140],[20,80],[20,20]];
-  assert.equal(core.recognize(circle),'circle');
-  assert.equal(core.recognize(square),'square');
-  assert.equal(core.recognize(spiral),'spiral');
-  assert.equal(core.recognize([[0,0],[100,0]]),null);
-  assert.equal(core.recognize([[1,1],[2,2]]),null);
+test('staff runes distinguish a circle, V and Z from lines and old overlapping shapes',()=>{
+ const circle=Array.from({length:65},(_,i)=>[100+60*Math.cos(i*Math.PI/32),100+60*Math.sin(i*Math.PI/32)]);
+ assert.equal(core.recognize(circle),'circle');
+ assert.equal(core.recognize([[20,20],[80,120],[140,20]]),'chevron');
+ assert.equal(core.recognize([[20,20],[140,20],[20,120],[140,120]]),'bolt');
+ for(const points of [[[0,0],[50,0],[100,0]],[[1,1],[2,2]],[[20,20],[140,20],[140,140],[20,140],[20,20]],circle.concat(circle.slice(1))])assert.equal(core.recognize(points),null);
 });
 test('shop refuses unaffordable and duplicate purchases; gear and upgrades change stats', () => {
   assert.equal(typeof core.newSave, 'function');
@@ -89,12 +85,19 @@ test('save loading rejects invalid equipment and clamps corrupt progression',()=
   assert.equal(s.equipment.weapon,'rust-sword');
   assert.deepEqual(core.loadSave('invalid'),core.newSave());
 });
-test('gesture recognition handles squares started mid-edge and an open spiral',()=>{
-  const square=[[80,20],[140,20],[140,80],[140,140],[80,140],[20,140],[20,80],[20,20],[80,20]];
-  const spiral=Array.from({length:90},(_,i)=>[100+(8+i*.8)*Math.cos(i*Math.PI/27),100+(8+i*.8)*Math.sin(i*Math.PI/27)]);
-  assert.equal(core.recognize(square),'square');
-  assert.equal(core.recognize(spiral),'spiral');
-  assert.equal(core.recognize([[0,0],[1,0],[1,1],[0,1],[0,0]]),null);
+test('staff runes tolerate finger jitter, sparse events, reverse strokes and different sizes',()=>{
+ const densify=points=>points.slice(1).flatMap((p,i)=>Array.from({length:17},(_,j)=>points[i].map((v,k)=>v+(p[k]-v)*j/17))).concat([points.at(-1)]);
+ const samples=[
+  ['circle',Array.from({length:55},(_,i)=>[90+53*Math.cos(.5+i*6.03/54),110+43*Math.sin(.5+i*6.03/54)])],
+  ['chevron',densify([[20,35],[80,150],[125,55]])],
+  ['bolt',densify([[25,25],[130,40],[35,115],[140,135]])]
+ ];
+ for(const [expected,points]of samples)for(const scale of [.55,1,1.8])for(const reverse of [false,true]){
+  const jittered=points.map(([x,y],i)=>[(x+Math.sin(i*1.7)*1.1)*scale+30,(y+Math.cos(i*2.3)*1.1)*scale+50]);
+  assert.equal(core.recognize(reverse?jittered.reverse():jittered),expected,expected+' scale='+scale+' reverse='+reverse);
+ }
+ assert.equal(core.recognize([[NaN,0],[20,20],[80,120],[140,20],[Infinity,3]]),'chevron');
+ assert.equal(core.recognize([[0,0],[1,0],[1,1],[0,1],[0,0]]),null);
 });
 test('heavy and sweep attacks reject both parry and dodge; guard stops every attack type',()=>{
   assert.equal(core.defend('up','down','slash',100,'heavy'),null);
@@ -136,6 +139,14 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   assert.equal(run('heroAction.type'),'slash');assert.equal(run('enemy.hp'),beforeContact,'damage waits for contact');
   run('time+=110;resolvePlayerStrike()');assert.ok(run('enemy.hp')<beforeContact);assert.ok(run('particles.length')>0);
   events.get('scene:pointerup')({pointerId:9,clientX:160,clientY:200});assert.equal(run('pendingSlash'),null,'release does not double strike');
+  run('save.equipment.offhand="parry-dagger";nextSlash=time;enemy.hp=500;enemy.openUntil=time+2000;slash("right")');
+  const combinedDamage=run('stats(save).attack'),rightDamage=run('pendingSlash.damage');
+  run('time+=109;resolvePlayerStrike()');assert.equal(run('enemy.hp'),500);
+  run('time++;resolvePlayerStrike()');assert.equal(run('enemy.hp'),500-rightDamage);
+  run('time+=54;resolvePlayerStrike()');assert.equal(run('enemy.hp'),500-rightDamage);
+  run('time++;resolvePlayerStrike()');assert.equal(run('enemy.hp'),500-combinedDamage);assert.equal(run('pendingSlash'),null);
+  run('resolvePlayerStrike()');assert.equal(run('enemy.hp'),500-combinedDamage,'offhand hit resolves only once');
+  run('save.equipment.offhand="wood-shield"');
   clickButton({dataset:{home:'hall'}});assert.equal(run('phase'),'home');assert.equal(run('attack'),null);
   run('enter(1);attack={dir:"up",at:time+100};slash("down")');
   assert.equal(run('attack'),null);assert.ok(run('stunned>time'));assert.equal(run('hp'),100);
@@ -144,7 +155,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   run('save.equipment.weapon="ember-staff"');
   const circle=Array.from({length:65},(_,i)=>[100+60*Math.cos(i*Math.PI/32),100+60*Math.sin(i*Math.PI/32)]);
   context.rune=circle;run('cast(rune)');const after=run('enemy.hp');run('cast(rune)');assert.equal(run('enemy.hp'),after);
-  context.rune=[[20,20],[100,20],[100,100],[20,100],[20,20]];run('cast(rune)');assert.equal(run('shield'),2);
+  context.rune=[[20,20],[80,120],[140,20]];run('cast(rune)');assert.equal(run('shield'),2);
   run('attack={dir:"up",at:time};loop(last+16)');assert.equal(run('hp'),100);assert.equal(run('shield'),1);
   run('shield=0;attack={dir:"up",at:time};openPanel();loop(last+16)');assert.equal(run('hp'),100);
   run('paused=false;hitStop=0;loop(last+16)');assert.ok(run('hp')<100);
@@ -346,4 +357,22 @@ test('inventory hilt is centered on the physical grip for both hands',async()=>{
  assert.ok(gripSection(g.front,0).center>.1);fitEquipmentGrip(g,true);
  for(const y of [0,-.125]){const s=gripSection(g.front,y);assert.ok(Math.abs(s.center)<.0001);assert.ok(Math.abs(s.halfWidth-.014)<.0001);}
  for(const mesh of Object.values(g))mesh.dispose();
+});
+
+
+test('dual-wielded cuts drive both hands through directional attacks and preserve total nominal damage',async()=>{
+ const {samplePlayerRig,gripPoint}=await import('./player-rig.mjs');const {Vector3}=await import('./vendor/three.module.js');
+ const save=core.newSave();save.equipment.weapon='iron-sword';
+ for(const offhand of ['parry-dagger','assassin-dagger','spider-claw']){
+  save.equipment.offhand=offhand;
+  const hits=core.strikeContacts(save);assert.deepEqual(hits.map(h=>[h.hand,h.at]),[['right',110],['left',165]]);assert.equal(hits.reduce((n,h)=>n+h.damage,0),core.stats(save).attack);
+  for(const dir of Object.keys(core.DIR)){
+   const sample=elapsed=>samplePlayerRig({save,action:'slash',dir,elapsed}),a=sample(75),b=sample(230),tip=new Vector3(0,.28,0),from=gripPoint(a.leftGrip,tip),to=gripPoint(b.leftGrip,tip);
+   assert.ok(a.left.elbow.distanceTo(b.left.elbow)>.035,'left elbow must drive the strike');assert.ok(a.leftGrip.quaternion.angleTo(b.leftGrip.quaternion)>1,'offhand must swing rather than bob');
+   if(dir==='right')assert.ok(to.x>from.x+.25);if(dir==='left')assert.ok(to.x<from.x-.25);if(dir==='up')assert.ok(to.y>from.y+.35);if(dir==='down')assert.ok(to.y<from.y-.35);
+   assert.equal(sample(165).offhandContact,true);assert.equal(sample(110).offhandContact,false);
+   for(let elapsed=0;elapsed<=300;elapsed+=5){const p=sample(elapsed);assert.ok(p.left.reachError<1e-6);assert.ok(p.right.reachError<1e-6);if(elapsed<300)assert.ok(p.left.wrist.distanceTo(sample(elapsed+5).left.wrist)<.06,'continuous offhand recovery');}
+  }
+ }
+ save.equipment.offhand='wood-shield';assert.equal(core.strikeContacts(save).length,1);save.equipment.weapon='greatsword';save.equipment.offhand='parry-dagger';assert.equal(core.strikeContacts(save).length,1);
 });

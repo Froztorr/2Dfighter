@@ -1,5 +1,5 @@
 import { Vector3, Quaternion, Euler } from './vendor/three.module.js';
-import { HERO_ACTIONS } from './core.mjs';
+import { HERO_ACTIONS, MELEE_CONTACTS } from './core.mjs';
 import { equipmentArt } from './fps-player.mjs';
 
 export const ARM_LENGTHS={upper:.34,forearm:.33};
@@ -12,8 +12,9 @@ const ease=t=>{t=clamp(t);return t*t*(3-2*t);};
 const v=a=>new Vector3(...a);
 const q=a=>new Quaternion().setFromEuler(new Euler(...a,'YXZ'));
 const key=(position,rotation,torso=[0,0,0])=>({position,rotation,torso});
-const ready=key([.145,-.255,-.62],[-.35,-.12,.18]);
-const twoReady=key([.095,-.255,-.64],[-.25,-.08,.1]);
+const ready=key([.21,-.29,-.62],[-.35,-.12,-.22]);
+const twoReady=key([.13,-.285,-.62],[-.25,-.08,-.45]);
+const offReady=key([-.21,-.30,-.64],[-.12,-.12,.18]);
 // Positions describe a complete cut through space: chamber, acceleration,
 // contact (110 ms), follow-through and recovery. The shoulder girdle turns too.
 export const STRIKE_KEYS={
@@ -22,9 +23,11 @@ export const STRIKE_KEYS={
  up:[ready,key([.105,-.405,-.57],[-1.9,.05,-.1],[.05,0,.03]),key([.08,-.22,-.68],[-.7,.05,.05],[-.025,0,0]),key([.14,-.075,-.59],[-.1,.03,.05],[-.075,0,-.025]),ready],
  down:[ready,key([.09,-.07,-.52],[.2,-.08,.1],[-.065,-.07,.025]),key([.085,-.23,-.66],[-.95,.03,-.07],[.015,.03,-.01]),key([.18,-.39,-.56],[-1.95,.12,-.17],[.065,.075,-.02]),ready]
 };
-const times=[0,48,110,185,300];
+const times=[0,48,MELEE_CONTACTS.main,185,300];
+const offTimes=[0,75,MELEE_CONTACTS.offhand,230,300];
 function interpolate(a,b,t){t=ease(t);return {position:v(a.position).lerp(v(b.position),t),quaternion:q(a.rotation).slerp(q(b.rotation),t),torso:q(a.torso).slerp(q(b.torso),t)};}
-function track(keys,elapsed){
+function track(keys,elapsed,timesOverride=times){
+ const times=timesOverride;
  const i=Math.max(0,times.findLastIndex(t=>elapsed>=t));if(i===keys.length-1)return interpolate(keys[i],keys[i],0);
  const t=(elapsed-times[i])/(times[i+1]-times[i]),dt=times[i+1]-times[i],t2=t*t,t3=t2*t;
  const curve=values=>{
@@ -60,14 +63,21 @@ export function solveArm(shoulder,target,pole){
 export function samplePlayerRig({save,action='idle',dir='right',elapsed=0,reducedMotion=false}){
  elapsed=Number.isFinite(elapsed)?Math.max(0,elapsed):0;
  const art=equipmentArt(save),base=art.twoHanded?twoReady:ready;
- let grip=interpolate(base,base,0),off=interpolate(key([-.145,-.26,-.64],[-.12,-.12,.12]),key([-.145,-.26,-.64],[-.12,-.12,.12]),0),alpha=1,magic=0;
+ let grip=interpolate(base,base,0),off=interpolate(offReady,offReady,0),alpha=1,magic=0;
  const duration=HERO_ACTIONS[action]?.duration||360,pulse=Math.sin(clamp(elapsed/duration)*Math.PI);
- if(action==='slash'&&elapsed<300){const keys=(STRIKE_KEYS[dir]||STRIKE_KEYS.right).map((k,i)=>i===0||i===4?base:k);grip=track(keys,elapsed);off.position.x+=Math.sin(elapsed/300*Math.PI)*.035;off.position.z-=Math.sin(elapsed/300*Math.PI)*.025;}
+ if(action==='slash'&&elapsed<300){const keys=(STRIKE_KEYS[dir]||STRIKE_KEYS.right).map((k,i)=>i===0||i===4?base:k);grip=track(keys,elapsed);off.position.x+=Math.sin(elapsed/300*Math.PI)*.035;off.position.z-=Math.sin(elapsed/300*Math.PI)*.025;
+  if(art.dualWielded){
+   const mirrorDir={right:'left',left:'right',up:'up',down:'down'}[dir]||'left';
+   const leftKeys=STRIKE_KEYS[mirrorDir].map((k,i)=>i===0||i===4?offReady:key([-k.position[0],k.position[1],k.position[2]-.025],[k.rotation[0],-k.rotation[1],-k.rotation[2]]));
+   off=track(leftKeys,elapsed,offTimes);
+  }
+ }
+
  else if(action==='guard'||action==='block'){
   grip=interpolate(base,key([.2,-.245,-.56],[-.15,.15,-.5]),1);
   off=interpolate(key([-.16,-.14,-.58],[.08,-.2,.1]),key([-.16,-.14,-.58],[.08,-.2,.1]),0);
   if(action==='block'&&elapsed<360){off.position.z+=pulse*.075;off.position.y-=pulse*.035;off.quaternion.multiply(q([pulse*.14,0,pulse*.08]));grip.torso=q([pulse*.045,0,0]);}
- }else if(action==='parry'&&elapsed<360){grip=interpolate(base,key([.025,-.13,-.6],[-.25,.22,-.95],[0,.08,-.04]),pulse);off.position.z-=pulse*.04;}
+ }else if(action==='parry'&&elapsed<360){grip=interpolate(base,key([.025,-.13,-.6],[-.25,.22,-.95],[0,.08,-.04]),pulse);off.position.z-=pulse*.04;if(art.dualWielded)off=interpolate(offReady,key([-.08,-.15,-.63],[-.25,-.22,.95]),pulse);}
  else if(['cast','heal','ward'].includes(action)&&elapsed<duration){grip=interpolate(base,key([.11,-.22,-.64],[-.13,.15,.04],[-.025,0,0]),pulse);off.position.lerp(v([-.12,-.21,-.61]),pulse);magic=pulse;}
  else if(action==='hurt'&&elapsed<360){grip.position.y-=pulse*.075;grip.position.z+=pulse*.04;grip.torso=q([pulse*.08,pulse*.04,0]);off.position.y-=pulse*.05;}
  else if(action==='stun'){grip.position.y-=.055;off.position.y-=.05;if(!reducedMotion)grip.quaternion.multiply(q([0,Math.sin(elapsed/70)*.025,0]));}
@@ -87,5 +97,5 @@ export function samplePlayerRig({save,action='idle',dir='right',elapsed=0,reduce
  grip.position.copy(right.wrist).sub(RIGHT_WRIST.clone().applyQuaternion(grip.quaternion));
  if(art.twoHanded){leftGrip.position.copy(gripPoint(grip,SUPPORT_GRIP));}
  else off.position.copy(left.wrist).sub(LEFT_WRIST.clone().applyQuaternion(off.quaternion));
- return {art,action,grip,off,torso,right,left,leftGrip,alpha,magic,contact:action==='slash'&&elapsed===110};
+ return {art,action,grip,off,torso,right,left,leftGrip,alpha,magic,contact:action==='slash'&&elapsed===MELEE_CONTACTS.main,offhandContact:art.dualWielded&&action==='slash'&&elapsed===MELEE_CONTACTS.offhand};
 }

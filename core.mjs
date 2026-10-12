@@ -131,25 +131,56 @@ export function defend(incoming, action, type, age, kind = 'normal') {
   if (!correct) return null;
   return age <= 170 ? 'perfect' : 'normal';
 }
-export function recognize(points) {
-  if (!Array.isArray(points) || points.length < 3) return null;
-  const clean = points.filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
-  if (clean.length < 3) return null;
-  let length = 0, turns = 0, signed = 0, corners = 0;
-  for (let i = 1; i < clean.length; i++) length += Math.hypot(clean[i][0]-clean[i-1][0], clean[i][1]-clean[i-1][1]);
-  for (let i = 1; i < clean.length-1; i++) {
-    const a = Math.atan2(clean[i][1]-clean[i-1][1], clean[i][0]-clean[i-1][0]);
-    const b = Math.atan2(clean[i+1][1]-clean[i][1], clean[i+1][0]-clean[i][0]);
-    let d = b-a; if (d > Math.PI) d -= Math.PI*2; if (d < -Math.PI) d += Math.PI*2;
-    turns += Math.abs(d); signed += d; if (Math.abs(d) > .65) corners++;
-  }
-  const close = Math.hypot(clean[0][0]-clean.at(-1)[0], clean[0][1]-clean.at(-1)[1]) < Math.max(25, length*.18);
-  if (length < 70) return null;
-  // ponytail: geometric heuristic for three runes; template matching if more runes are added.
-  if (Math.abs(signed) > 8 && turns < Math.abs(signed)*1.5) return 'spiral';
-  if (close && corners >= 3 && corners <= 5 && turns >= 3.5 && turns < 8) return 'square';
-  if (close && turns > 5 && turns < 9) return 'circle';
+export const MELEE_CONTACTS={main:110,offhand:165};
+export const STAFF_RUNES={
+ circle:{glyph:'○',name:'FIRE',cooldown:1800,multiplier:2.5},
+ chevron:{glyph:'V',name:'WARD',cooldown:6500},
+ bolt:{glyph:'Z',name:'NOVA',cooldown:4500,multiplier:4}
+};
+export function strikeContacts(save){
+ const off=ITEMS[save.equipment.offhand],twoHanded=ITEMS[save.equipment.weapon]?.hands===2,total=stats(save).attack;
+ return !twoHanded&&off&&!off.shield?[{hand:'right',at:MELEE_CONTACTS.main,damage:total-off.attack},{hand:'left',at:MELEE_CONTACTS.offhand,damage:off.attack}]:[{hand:'right',at:MELEE_CONTACTS.main,damage:total}];
+}
+function simplifyRune(points,tolerance){
+ if(points.length<3)return points;
+ const a=points[0],b=points.at(-1),dx=b[0]-a[0],dy=b[1]-a[1],length=dx*dx+dy*dy;let far=0,index=0;
+ for(let i=1;i<points.length-1;i++){
+  const t=length?Math.max(0,Math.min(1,((points[i][0]-a[0])*dx+(points[i][1]-a[1])*dy)/length)):0;
+  const distance=Math.hypot(points[i][0]-a[0]-t*dx,points[i][1]-a[1]-t*dy);if(distance>far){far=distance;index=i;}
+ }
+ if(far<=tolerance)return [a,b];
+ return [...simplifyRune(points.slice(0,index+1),tolerance).slice(0,-1),...simplifyRune(points.slice(index),tolerance)];
+}
+export function recognize(points){
+ if(!Array.isArray(points))return null;
+ const clean=[];for(const p of points)if(Array.isArray(p)&&Number.isFinite(p[0])&&Number.isFinite(p[1])&&(!clean.length||Math.hypot(p[0]-clean.at(-1)[0],p[1]-clean.at(-1)[1])>.5))clean.push(p);
+ if(clean.length<3)return null;
+ const xs=clean.map(p=>p[0]),ys=clean.map(p=>p[1]),w=Math.max(...xs)-Math.min(...xs),h=Math.max(...ys)-Math.min(...ys),diagonal=Math.hypot(w,h);
+ const distance=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]),cumulative=[0];
+ for(let i=1;i<clean.length;i++)cumulative.push(cumulative.at(-1)+distance(clean[i-1],clean[i]));
+ const length=cumulative.at(-1);if(diagonal<26||length<48)return null;
+ // Equal arc-length samples remove pointer-speed differences and tolerate finger jitter.
+ const samples=[];let segment=1;
+ for(let i=0;i<40;i++){const at=length*i/39;while(segment<clean.length-1&&cumulative[segment]<at)segment++;const t=(at-cumulative[segment-1])/(cumulative[segment]-cumulative[segment-1]);samples.push(clean[segment-1].map((v,j)=>v+(clean[segment][j]-v)*t));}
+ const turn=(a,b,c)=>{const u=[b[0]-a[0],b[1]-a[1]],v=[c[0]-b[0],c[1]-b[1]];return Math.atan2(u[0]*v[1]-u[1]*v[0],u[0]*v[0]+u[1]*v[1]);};
+ const gap=distance(clean[0],clean.at(-1)),closed=gap<diagonal*.32;
+ if(closed&&w>diagonal*.25&&h>diagonal*.25){
+  const rounded=simplifyRune(samples,diagonal*.045);let turns=0,signed=0,corners=0;
+  for(let i=1;i<rounded.length-1;i++){const t=turn(rounded[i-1],rounded[i],rounded[i+1]);turns+=Math.abs(t);signed+=t;if(Math.abs(t)>1.12)corners++;}
+  // One forgiving rounded loop; repeated loops and angular polygons do not alias to Fire.
+  if(Math.abs(signed)>4.3&&Math.abs(signed)<7.8&&turns<9&&corners<3&&length<diagonal*3.4)return 'circle';
   return null;
+ }
+ const nodes=simplifyRune(samples,diagonal*.085),legs=nodes.slice(1).map((p,i)=>distance(nodes[i],p)),path=legs.reduce((a,b)=>a+b,0);
+ if(nodes.length===3&&legs.every(l=>l>path*.23)){
+  const bend=Math.abs(turn(...nodes));if(bend>1.05&&bend<2.85&&nodes[1][1]>Math.max(nodes[0][1],nodes[2][1])+h*.30)return 'chevron';
+ }
+ if(nodes.length===4&&legs.every(l=>l>path*.14)){
+  const a=turn(...nodes.slice(0,3)),b=turn(...nodes.slice(1,4)),first=[nodes[1][0]-nodes[0][0],nodes[1][1]-nodes[0][1]],last=[nodes[3][0]-nodes[2][0],nodes[3][1]-nodes[2][1]];
+  const parallel=(first[0]*last[0]+first[1]*last[1])/(legs[0]*legs[2]);
+  if(a*b<0&&Math.abs(a)>.85&&Math.abs(b)>.85&&parallel>.35&&gap>diagonal*.55)return 'bolt';
+ }
+ return null;
 }
 export function newSave() { return { gold: 80, level: 1, xp:0, potions:3, unlocked: 1, bestStars:{}, owned: ['rust-sword', 'ember-staff','wood-shield','venom-dagger','parry-dagger'], equipment: { helm: null, armor: null, pants: null, boots: null, ring1: null, ring2:null,neck:null,cloak:null, weapon: 'rust-sword',offhand:'wood-shield' }, upgrades: { vigor: 0, edge: 0 } }; }
 export function stats(save) {
