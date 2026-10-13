@@ -7,7 +7,8 @@
     "test": "node --test test.mjs",
     "start": "node server.mjs",
     "test:browser": "node tools/browser-animation.mjs",
-    "preview:3d": "node tools/preview-3d.mjs"
+    "preview:3d": "node tools/preview-3d.mjs",
+    "test:enemies": "node tools/browser-enemies.mjs"
   },
   "dependencies": {
     "phaser": "^3.90.0",

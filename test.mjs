@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 const fps=await import('./fps-player.mjs');
+const enemies=await import('./enemy-animation.mjs');
+const atlas=await import('./enemy-atlas.mjs');
 const core = await import('./core.mjs').catch(() => ({}));
 
 test('impact particles follow the hit direction',()=>{assert.ok(core.impactParticles('up',10).every(p=>p.vy<0));assert.ok(core.impactParticles('right',10).every(p=>p.vx>0));});
@@ -99,12 +101,16 @@ test('staff runes tolerate finger jitter, sparse events, reverse strokes and dif
  assert.equal(core.recognize([[NaN,0],[20,20],[80,120],[140,20],[Infinity,3]]),'chevron');
  assert.equal(core.recognize([[0,0],[1,0],[1,1],[0,1],[0,0]]),null);
 });
-test('heavy and sweep attacks reject both parry and dodge; guard stops every attack type',()=>{
+test('heavy requires block; skull sweep requires a timed directional dodge',()=>{
   assert.equal(core.defend('up','down','slash',100,'heavy'),null);
   assert.equal(core.defend('up','up','dodge',100,'heavy'),null);
   assert.equal(core.defend('up','down','slash',100,'sweep'),null);
-  assert.equal(core.defend('up','up','dodge',100,'sweep'),null);
-  for(const kind of ['normal','heavy','sweep']){
+  assert.equal(core.defend('up','up','dodge',100,'sweep'),'perfect');
+  assert.equal(core.defend('up','left','dodge',100,'sweep'),null);
+  assert.equal(core.defend('up','up','dodge',451,'sweep'),null);
+  assert.equal(core.defend('up','up','dodge',-1,'sweep'),null);
+  assert.deepEqual(core.blockHit(100,'sweep'),{stamina:100,broken:false,blocked:false});
+  for(const kind of ['normal','heavy']){
     const result=core.blockHit(100,kind);
     assert.equal(result.broken,false);
     assert.ok(result.stamina<100&&result.stamina>0);
@@ -113,9 +119,9 @@ test('heavy and sweep attacks reject both parry and dodge; guard stops every att
 test('guard breaks on insufficient or exactly depleted stamina and recovers gradually',()=>{
   assert.equal(typeof core.blockHit,'function');
   for(const amount of [0,5,24]){
-    assert.deepEqual(core.blockHit(amount,'normal'),{stamina:0,broken:true});
+    assert.deepEqual(core.blockHit(amount,'normal'),{stamina:0,broken:true,blocked:false});
   }
-  assert.deepEqual(core.blockHit(25,'normal'),{stamina:1,broken:false});
+  assert.deepEqual(core.blockHit(25,'normal'),{stamina:1,broken:false,blocked:true});
   assert.equal(core.regenStamina(98,1,false),100);
   assert.equal(core.regenStamina(0,1,false),16);
   assert.equal(core.regenStamina(0,1,true),4);
@@ -125,7 +131,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   const imageCalls=[];
   const drawing=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
   const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{setProperty(){}},dataset:{},hidden:true,setAttribute(){},classList:{toggle(){}},addEventListener(type,fn){events.set(id+':'+type,fn);},getContext:()=>drawing,querySelector:()=>node('heading'),getBoundingClientRect:()=>({left:0,top:0,width:240,height:400}),setPointerCapture(){}});return nodes.get(id);};
-  const context=vm.createContext({...core,...fps,createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){if(/\/(frost|spider|demon)\.png$/.test(path)){this.naturalWidth=1024;this.naturalHeight=1536;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
+  const context=vm.createContext({...core,...fps,...enemies,...atlas,createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){const meta=atlas.ENEMY_ATLAS[path.split('/').at(-1).replace('.png','')];if(meta){this.naturalWidth=meta.width;this.naturalHeight=meta.height;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
   const source=(await readFile(new URL('./app.js',import.meta.url),'utf8')).replace(/^import[^\n]+\n/gm,'');
   vm.runInContext(source,context);
   const run=s=>vm.runInContext(s,context);
@@ -190,8 +196,9 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   assert.equal(run('enemy.hp'),hurt);assert.equal(run('blocking'),false);
   run('time=playerStunned+1;setBlocking(true)');assert.equal(run('blocking'),true);
   run('openPanel()');assert.equal(run('blocking'),false);
-  run('enter(1);attack={dir:"up",kind:"sweep",at:time+100};evade("up")');assert.notEqual(run('attack'),null);
-  run('setBlocking(true);attack.at=time;loop(last+16)');assert.equal(run('hp'),100);
+  run('enter(1);attack={dir:"up",kind:"sweep",at:time+100};evade("up")');assert.equal(run('attack'),null);assert.equal(run('hp'),100);
+  run('enter(1);setBlocking(true);shield=2;attack={dir:"up",kind:"sweep",at:time};resolveAttack()');assert.ok(run('hp')<100);assert.equal(run('shield'),2);assert.equal(run('stamina'),100);
+  run('enter(1);shield=2;attack={dir:"up",kind:"sweep",at:time};resolveAttack()');assert.ok(run('hp')<100);assert.equal(run('shield'),2);
   run('setBlocking(false)');
   events.get('blockBtn:pointerdown')({pointerId:1,preventDefault(){}});assert.equal(run('blocking'),true);
   events.get('blockBtn:pointerup')({pointerId:2});assert.equal(run('blocking'),true);
@@ -202,21 +209,13 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   assert.ok(!imageCalls.some(frame=>frame[0]===run('sprites.guards')),'guard must not replace the enemy anatomy');
   imageCalls.length=0;run('hit(10);draw()');
   assert.ok(imageCalls.some(frame=>frame[0]===run('sprites.brute')),'guard impact must retain the combat character atlas');
-  for(const type of ['brute','lizard','wraith','knight'])for(const [dir,expectedRow] of [['up',1],['down',2],['left',type==='wraith'?4:3],['right',type==='wraith'?3:4]]){
+  for(const type of Object.keys(atlas.ENEMY_ATLAS))for(const dir of ['up','down','left','right']){
     run(`enter(1);enemy.type='${type}';attack={dir:'${dir}',kind:'normal',at:time+900};draw()`);
     const prep=imageCalls.findLast(frame=>frame[0]===run(`sprites['${type}']`));
-    assert.equal(Math.floor((prep[2]+prep[4]/2)/280.4),expectedRow);
     run('resolveAttack();draw()');const strike=imageCalls.findLast(frame=>frame[0]===run(`sprites['${type}']`));
-    assert.equal(Math.floor((strike[2]+strike[4]/2)/280.4),expectedRow);
-    assert.notEqual(prep[1],strike[1],'windup and strike must be different frames');
-    for(const frame of [prep,strike]){assert.ok(frame.slice(1).every(Number.isFinite));assert.ok(frame[1]>=0&&frame[2]>=0&&frame[1]+frame[3]<=1122&&frame[2]+frame[4]<=1402);}
-  }
-  for(const [i,type] of ['frost','spider','demon'].entries())for(const dir of ['up','down','left','right']){
-    run(`enter(${i+4});enemy.type='${type}';draw();attack={dir:'${dir}',kind:'normal',at:time+900};draw()`);
-    const prep=imageCalls.findLast(frame=>frame[0]===run(`sprites.${type}`));
-    run('resolveAttack();draw()');const strike=imageCalls.findLast(frame=>frame[0]===run(`sprites.${type}`));
-    assert.notEqual(prep[1],strike[1]);
-    for(const frame of [prep,strike])assert.ok(frame[1]>=0&&frame[2]>=0&&frame[1]+frame[3]<=1024&&frame[2]+frame[4]<=1536);
+    assert.notDeepEqual(prep.slice(1,5),strike.slice(1,5),'windup and contact need distinct poses');
+    const {width,height}=atlas.ENEMY_ATLAS[type];
+    for(const frame of [prep,strike]){assert.ok(frame.slice(1).every(Number.isFinite));assert.ok(frame[1]>=0&&frame[2]>=0&&frame[1]+frame[3]<=width&&frame[2]+frame[4]<=height);}
   }
   run('save=newSave()');
   for(let f=1;f<=6;f++){
@@ -224,7 +223,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
     // Play the actual scheduler at 60 fps with starter gear, without injecting enemies or damage.
     run(`for(let frames=0;frames<18000&&!['won','dead'].includes(phase);frames++){
       loop(last+16);
-      if(attack&&attack.at-time<=130){if(attack.kind!=='normal')setBlocking(true);else if(attack.kind==='heavy')evade(attack.dir);else slash(DIR[attack.dir]);}
+      if(attack&&attack.at-time<=130){if(attack.kind==='heavy')setBlocking(true);else if(attack.kind==='sweep')evade(attack.dir);else slash(DIR[attack.dir]);}
       else if(!attack){setBlocking(false);if(enemy.openUntil>time)slash('left');}
     }`);
     assert.equal(run('phase'),'won',`starter equipment can finish floor ${f} using correctly timed defenses`);
@@ -375,4 +374,21 @@ test('dual-wielded cuts drive both hands through directional attacks and preserv
   }
  }
  save.equipment.offhand='wood-shield';assert.equal(core.strikeContacts(save).length,1);save.equipment.weapon='greatsword';save.equipment.offhand='parry-dagger';assert.equal(core.strikeContacts(save).length,1);
+});
+
+
+test('enemy sequences use all six attack frames and never show contact before damage',()=>{
+ for(const [i,dir] of ['up','down','left','right'].entries()){
+  const enemy={dir,recoverUntil:1640,strikeUntil:1160};
+  const attack={dir,started:0,at:1000};
+  const frames=[0,400,900].map(time=>enemies.enemyFrame({phase:'combat',time,attack,enemy}));
+  frames.push(...[1000,1200,1500].map(time=>enemies.enemyFrame({phase:'combat',time,enemy})));
+  assert.deepEqual(frames.map(f=>f.column),[0,1,2,3,4,5]);
+  assert.ok(frames.every(f=>f.row===i+1));
+ }
+ assert.deepEqual(enemies.enemyFrame({phase:'combat',time:0,enemy:{}}),{row:0,column:0});
+ assert.deepEqual(enemies.enemyFrame({phase:'combat',time:280,enemy:{}}),{row:0,column:1});
+ assert.deepEqual(enemies.enemyFrame({phase:'combat',time:280,enemy:{hit:500}}),{row:0,column:3});
+ assert.deepEqual(enemies.enemyFrame({phase:'walking',time:100,transition:1500}),{row:0,column:4});
+ assert.deepEqual(enemies.enemyFrame({phase:'walking',time:600,transition:1500}),{row:0,column:5});
 });

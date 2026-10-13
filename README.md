@@ -21,7 +21,7 @@
 - ลากกลางจอเพื่อเริ่มฟันทันทีเมื่อผ่านระยะ 18 logical pixels ซ้าย/ขวา/ขึ้น/ลง; desktop ใช้ arrow keys
 - ศัตรูแสดงลูกศรก่อนโจมตี: ฟันสวนทิศลูกศรในช่วง 450 ms สุดท้ายเพื่อ parry; 170 ms สุดท้ายเป็น perfect และ stun 2.1 วินาที
 - Dodge ด้วยปุ่มลูกศรด้านล่างขวา หรือ Shift+arrow; หลบตามทิศลูกศรศัตรู ใช้ timing เดียวกับ parry มี cooldown 650 ms
-- ท่าปกติมีลูกศรสำหรับ parry/dodge/block; ท่าโล่ heavy และกะโหลก sweep ต้อง BLOCK เท่านั้น ไม่มีลูกศร และมีออร่าแดงเต้นรอบศัตรู
+- ท่าปกติมีลูกศรสำหรับ parry/dodge/block; ท่าโล่ heavy ต้อง BLOCK; กะโหลก sweep ต้อง DODGE ตามลูกศรเท่านั้น (โล่และ WARD ป้องกันไม่ได้)
 - ศัตรูตั้งรับลดดาเมจ 84% ที่ LV1 เพิ่ม 4% ต่อเลเวลจนถึง 100%; parry/dodge เปิดช่องสวน 600–1095 ms ตามเลเวล, perfect เปิด 2.1 วินาที, บล็อกด้วยโล่เปิด 550 ms และ ward เปิด 900 ms
 - กดปุ่มโล่ด้านล่างซ้ายค้าง หรือกด Space ค้าง เพื่อบล็อกทุกทิศ/ทุกประเภท เสีย stamina 24/42/34 ตามประเภท; ถ้าเหลือไม่พอหรือเหลือ 0 จะเสียเลือดและสตั้น 1.4 วินาที โจมตี/หลบ/ร่ายเวท/บล็อกไม่ได้ระหว่างสตั้น
 - Stamina สูงสุด 100 ฟื้น 16 ต่อวินาทีเมื่อปล่อยโล่ หรือ 4 เมื่อถือโล่ เริ่มฟื้น 0.8 วินาทีหลังรับแรงปะทะ กำลังบล็อกจะฟันหรือร่ายเวทไม่ได้
@@ -53,7 +53,7 @@
 
 `npm test` ตรวจจังหวะปะทะ เฟรมแต่ละ action อุปกรณ์ ทิศป้องกัน และ game loop ทั้ง 6 ด่าน รวม stun, cooldown, ward, pause, retry และ daily rollover
 
-`npm ci && npm run test:browser` ตรวจ Chromium จริง (กำหนด `CHROMIUM_PATH` ได้; default `/usr/bin/chromium`) ตรวจโมเดล 3D สำหรับ 78 คู่ชุด/อาวุธ และทุก action, อาวุธรอง 7 แบบ, preview เต็มตัว, block-only cue ที่ซ่อนลูกศรและออร่าแดงเต้น, ท่าตายก่อนเปิดผล และจอมือถือ เก็บภาพใน `artifacts/` ใช้ `python tools/check-assets.py` ตรวจ RGBA และเฟรมไม่ว่าง
+`npm ci && npm run test:browser` ตรวจ Chromium จริง (กำหนด `CHROMIUM_PATH` ได้; default `/usr/bin/chromium`) ตรวจโมเดล 3D สำหรับ 78 คู่ชุด/อาวุธ และทุก action, อาวุธรอง 7 แบบ, preview เต็มตัว, heavy BLOCK ONLY และ skull DODGE ONLY พร้อมลูกศร, ท่าตายก่อนเปิดผล และจอมือถือ เก็บภาพใน `artifacts/` ใช้ `python tools/check-assets.py` ตรวจ RGBA และเฟรมไม่ว่าง
 
 ## Campaign expansion / daily / camp
 
@@ -76,3 +76,9 @@
 นี่เป็น single-player sample ใช้ geometric gesture recognition สำหรับ 3 รูน ความสมดุลและ gesture ยังต้องทดสอบกับนิ้วบนมือถือจริง; ไม่มี account หรือ cloud save
 
 ท่าผู้เล่นแยก idle, ฟันสี่ทิศ, guard, รับแรง block, parry, dodge, hurt, stun, death, cast, ward, heal, victory และ walk โดยท่าตายเริ่มทรุดแล้วล้มรอบจุดเท้า ส่วน stun ค้างจนหมดเวลาสถานะ ไม่รีเซ็ตเองเป็น idle
+
+## Enemy animation and visibility update
+
+Seven enemies use original inked dark-fantasy art with 30 poses each (210 total), six poses per directional attack, measured frame gutters and fixed ground anchors. Player hands and equipment render at 50% scale below the screen midpoint during every action. Skull attacks require a matching directional dodge within 450 ms (170 ms for perfect). Shields and magic wards cannot stop skull attacks; shield-icon heavy attacks remain block-only.
+
+`node tools/browser-enemies.mjs` checks the updated enemies, skull defenses, and player framing in desktop/mobile Chromium.

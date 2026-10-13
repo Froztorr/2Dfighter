@@ -1,3 +1,5 @@
+import { ENEMY_ATLAS } from './enemy-atlas.mjs';
+import { enemyFrame } from './enemy-animation.mjs';
 import { playerAssets } from './fps-player.mjs';
 import { createPhaserRenderer } from './phaser-renderer.mjs';
 import { STAFF_RUNES, strikeContacts, HERO_ACTIONS, impactParticles, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
@@ -30,16 +32,6 @@ const arrows = { up: '↑', down: '↓', left: '←', right: '→' };
 const floors = FLOORS.map(f=>f.name);
 const enemyTypes = { brute:'Grotto Brute', lizard:'Scale Reaver', wraith:'Cinder Wraith', knight:'Crimson Warden', frost:'Rime Revenant',spider:'Widow Matriarch',demon:'Obsidian Behemoth' };
 const encounters = FLOORS.map(f=>f.enemies);
-// Measured transparent gutters: generated sheets are not perfectly uniform grids.
-const atlasCuts = {
-  frost:{x:[0,263,521,789,1024],y:[[0,256,493,768,1024,1241,1536],[0,280,512,768,1024,1240,1536],[0,236,512,768,1024,1242,1536],[0,256,512,768,1024,1240,1536]]},
-  spider:{x:[0,256,512,768,1024],y:[[0,256,504,768,1024,1261,1536],[0,256,512,768,1024,1260,1536],[0,252,512,768,1024,1262,1536],[0,256,512,768,1024,1263,1536]]},
-  demon:{x:[0,252,512,761,1024],y:[[0,256,496,768,1024,1280,1536],[0,256,476,768,1024,1278,1536],[0,233,512,768,1024,1280,1536],[0,256,512,768,1024,1274,1536]]},
-  brute:{x:[0,284,561,836,1122],y:[[0,280,555,841,1122,1402],[0,280,561,832,1089,1402],[0,277,561,841,1114,1402],[0,280,561,841,1122,1402]]},
-  lizard:{x:[0,280,561,841,1122],y:Array(4).fill([0,280,561,841,1122,1402])},
-  wraith:{x:[0,280,554,838,1122],y:[[0,280,561,841,1112,1402],[0,280,556,841,1114,1402],[0,275,561,841,1118,1402],[0,280,561,841,1122,1402]]},
-  knight:{x:[0,280,561,841,1122],y:[[0,280,551,841,1122,1402],[0,280,540,841,1113,1402],[0,278,561,841,1122,1402],[0,278,561,841,1122,1402]]}
-};
 function persist() { try { localStorage.setItem('emberblade-v1', JSON.stringify(save)); } catch { say('Storage unavailable — progress lasts this session'); } }
 function say(text) { $('message').textContent = text; }
 function animateHero(type,dir='right'){heroAction={type,dir,at:time};}
@@ -77,7 +69,7 @@ function hud() {
   $('gold').textContent = save.gold; $('floor').textContent = `${floor} / ${floors.length} · ROOM ${room+1}`;
   $('spellHint').hidden = !s.magic;
   const cue = $('telegraph'), kind=attack?.kind || 'normal';
-  const directional=!!attack&&kind==='normal';$('attackArrow').hidden=!directional;$('attackArrow').textContent=directional?arrows[attack.dir]:'';cue.dataset.directional=String(directional);cue.setAttribute('aria-label',attack?`${ATTACKS[kind].label}${directional?' '+attack.dir:''}`:'');
+  const directional=!!attack&&kind!=='heavy';$('attackArrow').hidden=!directional;$('attackArrow').textContent=directional?arrows[attack.dir]:'';cue.dataset.directional=String(directional);cue.setAttribute('aria-label',attack?`${ATTACKS[kind].label}${directional?' '+attack.dir:''}`:'');
   $('attackRule').textContent=attack ? ATTACKS[kind].label : '';
   cue.style.setProperty('--cue-color',ATTACKS[kind].color);
   cue.dataset.kind=kind;
@@ -144,7 +136,7 @@ function evade(dir) {
   setBlocking(false);
   nextDodge = time+650; dodge = {dir,until:time+260};
   animateHero('dodge',dir);pendingSlash=null;
-  if (!defensive(dir,'dodge')) say(attack&&attack.kind!=='normal'?'ท่านี้ต้อง BLOCK • กดโล่':'Dodge: ตามทิศลูกศร เมื่อใกล้โดน');
+  if (!defensive(dir,'dodge')) say(attack?.kind==='heavy'?'ท่านี้ต้อง BLOCK • กดโล่':'DODGE · ตามลูกศร เมื่อใกล้โดน');
 }
 function cast(points) {
   if (phase!=='combat' || paused || blocking || time<playerStunned) return;
@@ -283,36 +275,28 @@ function enemyPosition() {
 function drawEnemy() {
   const sheet=sprites[enemy?.type || 'brute'];
   if(!sheet.complete || !sheet.naturalWidth)return;
-  const expanded=['frost','spider','demon'].includes(enemy?.type);
-  // Guard and movement now share the character's own atlas and ground anchor.
-  // Separately generated guards had different anatomy and cannot be blended safely.
-  let row=0,column=0;
-  if(phase==='walking')column=3;
-  else if(stunned>time||enemy?.hit>time)column=2;
-  else if(attack){row=['up','down','left','right'].indexOf(attack.dir)+1;column=attack.at-time>400?0:1;}
-  else if(enemy?.recoverUntil>time){row=['up','down','left','right'].indexOf(enemy.dir)+1;column=enemy.strikeUntil>time?2:3;}
-  // Match the actual directional poses rather than rotating a generic strike.
-  if(row>=3 && enemy.type==='wraith')row=row===3?4:3;
-  if(row>=3 && enemy.type==='knight')column=(row===3?[2,2,1,0]:[3,0,1,2])[column];
-  const cellW=sheet.naturalWidth/4,cellH=sheet.naturalHeight/(expanded?6:5);
-  const {x,y}=enemyPosition(), size=room===2?174:156;
-  const bounds=canvas.getBoundingClientRect(), aspect=(bounds.width/240)/(bounds.height/400);
-  const cuts=atlasCuts[enemy?.type || 'brute']||{x:[0,cellW,cellW*2,cellW*3,cellW*4],y:Array(4).fill(Array.from({length:7},(_,i)=>cellH*i))};
-  const sx=cuts.x[column],sy=cuts.y[column][row],sw=cuts.x[column+1]-sx,sh=cuts.y[column][row+1]-sy;
-  const scale=size/cellW;
-  renderer.syncEnemy({sheet,type:enemy?.type||'brute',key:`${row}:${column}`,sx,sy,sw,sh,column,row,cellH,x,y,size,aspect,mirror:enemy?.type==='demon'&&row===3,danger:attack&&attack.kind!=='normal'?{remaining:attack.at-time,clock:time,reducedMotion}:null,alpha:phase==='walking'?Math.max(0,Math.min(1,(transition-time)/500)):1});
+  // All enemies share the same 30-pose layout and a fixed cell/ground anchor.
+  const frame=enemyFrame({phase,time,attack,enemy,stunned,transition});
+  let {row,column}=frame;
+  // Verified painted trajectories: these sheets place their left cut in row five.
+  if(['knight','frost'].includes(enemy?.type)&&row>=3)row=row===3?4:3;
+  const cellH=sheet.naturalHeight/5;
+  const crop=ENEMY_ATLAS[enemy?.type||'brute'].frames[row*6+column];
+  const {x,y}=enemyPosition(),size=room===2?174:156;
+  const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
+  renderer.syncEnemy({sheet,type:enemy?.type||'brute',key:`${row}:${column}`,...crop,column,row,cellH,columns:6,spriteScale:enemy?.type==='brute'?1.4:1,x,y,size,aspect,danger:attack&&attack.kind!=='normal'?{remaining:attack.at-time,clock:time,reducedMotion}:null,alpha:phase==='walking'?Math.max(0,Math.min(1,(transition-time)/500)):1});
 
 }
 function resolveAttack() {
   const kind=attack.kind || 'normal';
   let damage=Math.max(3,14+floor*3+room*2+(kind==='heavy'?8:0)-stats(save).armor);
-  enemy.dir=attack.dir;enemy.strikeUntil=time+180;enemy.recoverUntil=time+480;
-  if(blocking){
+  enemy.dir=attack.dir;enemy.strikeUntil=time+160;enemy.recoverUntil=time+640;
+  if(blocking&&kind!=='sweep'){
     const result=blockHit(stamina,kind);stamina=result.stamina;regenAt=time+800;
     if(result.broken){playerStunned=time+1400;stunStarted=time;releaseGuard();animateHero('stun');say('GUARD BREAK · สตั้น!');}
     else{animateHero('block',attack.dir);damage=0;enemy.openUntil=time+550;progress(save,'defenses');persist();say(`BLOCK · COUNTER! −${ATTACKS[kind].cost} STAMINA`);effects.push({x:88,y:295,text:'✦',color:'#94e5ff',until:time+400});}
-  }else if(shield){animateHero('ward',attack.dir);shield--;damage=0;enemy.openUntil=time+900;progress(save,'defenses');persist();say('WARD BLOCK · COUNTER!');}
-  else say(kind!=='normal'?'ท่ากวาดต้อง BLOCK!':'HIT! ปัดสวน หรือหลบตามลูกศร');
+  }else if(shield&&kind!=='sweep'){animateHero('ward',attack.dir);shield--;damage=0;enemy.openUntil=time+900;progress(save,'defenses');persist();say('WARD BLOCK · COUNTER!');}
+  else say(kind==='sweep'?'SKULL · DODGE ONLY!':kind==='heavy'?'HEAVY · BLOCK ONLY!':'HIT! ปัดสวน หรือหลบตามลูกศร');
   if(damage){run.damage+=Math.min(hp,damage);hp=Math.max(0,hp-damage);flash=time+420;if(time>=playerStunned)animateHero('hurt',attack.dir);pendingSlash=null;impact(120,295,attack.dir,'blood',2);}
   else impact(85,282,attack.dir,'spark',1.3);
   attack=null;nextAttack=time+1100;

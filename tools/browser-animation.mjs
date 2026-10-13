@@ -22,9 +22,16 @@ try{
  const framing=await page.evaluate(async()=>{
   const hero=window.__animationTest('renderer.inspect().hero'),save=window.__animationTest('save'),report=[];
   for(const weapon of ['iron-sword','greatsword','ember-staff','inferno-axe']){
-   save.equipment.weapon=weapon;save.equipment.offhand=['greatsword','ember-staff','inferno-axe'].includes(weapon)?null:'wood-shield';hero.sync({save,action:'idle',elapsed:0,reducedMotion:true});
-   const pixels=hero.texture.context.getImageData(170,280,140,200).data;let occupied=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i]>20)occupied++;
-   report.push({weapon,coverage:occupied/(140*200)});
+   save.equipment.weapon=weapon;save.equipment.offhand=['greatsword','ember-staff','inferno-axe'].includes(weapon)?null:'wood-shield';
+   for(const action of ['idle','slash','guard','block','parry','cast','dodge','hurt','death'])for(const dir of (action==='slash'?['up','down','left','right']:['right']))for(const elapsed of [110]){
+    hero.sync({save,action,dir,elapsed,reducedMotion:true});
+    const pixels=hero.texture.context.getImageData(0,0,480,400).data;
+    if(pixels.some((value,index)=>index%4===3&&value>0))throw Error(weapon+'/'+action+'/'+dir+' crossed screen midpoint');
+   }
+   hero.sync({save,action:'idle',elapsed:0,reducedMotion:true});
+   const pixels=hero.texture.context.getImageData(0,400,480,400).data;
+   if(!pixels.some((value,index)=>index%4===3&&value>20))throw Error('Invisible player '+weapon);
+   report.push({weapon,coverage:0});
   }
   return report;
  });
@@ -63,11 +70,12 @@ try{
  await page.evaluate(()=>window.__animationTest(`renderer.closePreview();$('panel').hidden=true;equip(save,'armor','scale-mail');equip(save,'weapon','rust-sword');equip(save,'offhand','wood-shield');enter(1);`));
  for(const kind of ['heavy','sweep']){
   await page.evaluate(kind=>window.__animationTest(`attack={dir:'left',kind:'${kind}',started:time,at:time+1300};hud();draw();`),kind);
-  assert.equal(await page.locator('#attackArrow').isVisible(),false);assert.equal(await page.locator('#attackArrow').textContent(),'');
+  assert.equal(await page.locator('#attackArrow').isVisible(),kind==='sweep');assert.equal(await page.locator('#attackArrow').textContent(),kind==='sweep'?'←':'');
+  assert.equal(await page.locator('#attackRule').textContent(),kind==='sweep'?'DODGE ONLY':'BLOCK ONLY');
   const aura=await page.evaluate(()=>window.__animationTest('renderer.inspect().dangerAura.commandBuffer.slice()'));assert.ok(aura.length>0);await page.waitForTimeout(150);assert.notDeepEqual(aura,await page.evaluate(()=>window.__animationTest('renderer.inspect().dangerAura.commandBuffer.slice()')));
   await page.screenshot({path:`artifacts/first-person-${kind}.png`});await page.evaluate(()=>window.__animationTest('setBlocking(true);resolveAttack();hud();'));
-  assert.equal(await page.evaluate(()=>window.__animationTest('currentHero().action')),'block');await page.waitForTimeout(120);
-  assert.equal(await page.evaluate(()=>window.__animationTest('renderer.inspect().hero.pose.action')), 'block');
+  assert.equal(await page.evaluate(()=>window.__animationTest('currentHero().action')),kind==='sweep'?'hurt':'block');await page.waitForTimeout(120);
+  assert.equal(await page.evaluate(()=>window.__animationTest('renderer.inspect().hero.pose.action')), kind==='sweep'?'hurt':'block');
   await page.evaluate(()=>window.__animationTest('releaseGuard();stamina=100'));
  }
  // Weapons/offhands use the inventory atlas on solid extruded geometry.
@@ -98,5 +106,5 @@ try{
  assert.equal(await page.evaluate(()=>window.__animationTest('enemy.hp')),2000,'old square must not accidentally cast Fire');
  assert.equal(await page.evaluate(()=>window.__animationTest('Object.keys(cooldown).length')),0);
  assert.match(await page.locator('#spellHint').innerText(),/V WARD/);assert.match(await page.locator('#spellHint').innerText(),/Z NOVA/);
- assert.deepEqual(errors,[]);console.log('3D combat browser checks passed: clear enemy framing, dual-hand swings, circle/V/Z pointer gestures, 78 weapon/material combinations, all combat states, 7 offhands, full-body portraits, block-only cues, delayed death, mobile viewport. Screenshots: artifacts/');
+ assert.deepEqual(errors,[]);console.log('3D combat browser checks passed: clear enemy framing, dual-hand swings, circle/V/Z pointer gestures, 78 weapon/material combinations, all combat states, 7 offhands, full-body portraits, block/dodge-only cues, delayed death, mobile viewport. Screenshots: artifacts/');
 }finally{await browser?.close();server?.kill();}
