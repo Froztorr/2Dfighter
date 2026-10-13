@@ -10,7 +10,8 @@ for path in sorted((Path(__file__).resolve().parents[1] / 'assets').glob('*.png'
         alpha = image.getchannel('A')
         assert alpha.getextrema()[0] == 0 and alpha.getextrema()[1] >= 250, f'{path.name}: missing transparent background'
         width, height = image.size
-        cols, rows = {'portrait':(4,1),**{p.stem:(8,8) for p in Path('assets').glob('fps-*.png')},'arms-back':(3,4),'arms':(3,4),'gear':(6,6),'hero':(4,2),'guards':(4,2),'relics':(4,3),'frost':(4,6),'spider':(4,6),'demon':(4,6)}.get(path.stem,(4,5))
+        enemies={'brute','lizard','wraith','knight','frost','spider','demon'}
+        cols, rows = (6,5) if path.stem in enemies else {'portrait':(4,1),**{p.stem:(8,8) for p in Path('assets').glob('fps-*.png')},'arms-back':(3,4),'arms':(3,4),'gear':(6,6),'hero':(4,2),'guards':(4,2),'relics':(4,3),'frost':(4,6),'spider':(4,6),'demon':(4,6)}.get(path.stem,(4,5))
         cells = []
         for row in range(rows):
             for col in range(cols):
@@ -20,6 +21,10 @@ for path in sorted((Path(__file__).resolve().parents[1] / 'assets').glob('*.png'
         if path.stem=='portrait' or path.stem.startswith('fps-') or path.stem in ['arms-back','arms','gear','hero','guards','relics']:
             assert alpha.histogram()[0] > width*height*.25, f'{path.name}: excessive background'
             print(f'{path.name}: {width}x{height}, RGBA, {cols*rows} nonempty cells')
+            continue
+        if path.stem in enemies:
+            assert alpha.histogram()[0] > width*height*.25, f'{path.name}: excessive background'
+            print(f'{path.name}: {width}x{height}, RGBA, {cols*rows} nonempty enemy poses')
             continue
         xcuts=[0]+[min(range(round(width*c/4)-25,round(width*c/4)+26),key=lambda x:(sum(v>128 for v in alpha.crop((x,0,x+1,height)).tobytes()),abs(x-width*c/4))) for c in range(1,4)]+[width]
         ycuts=[]

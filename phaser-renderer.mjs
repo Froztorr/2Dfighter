@@ -27,7 +27,8 @@ export class FirstPersonPlayer {
   sync(state){
     const stamp=[...Object.values(state.save.equipment),state.action,state.dir,state.elapsed,state.aspect,state.reducedMotion].join(':');if(stamp===this.stamp)return;this.stamp=stamp;
     this.pose=this.model.sync(state);this.art=this.pose.art;
-    const c=this.texture.context;c.clearRect(0,0,480,800);c.drawImage(this.model.renderer.domElement,0,0,480,800);this.texture.refresh();this.image.setAlpha(this.pose.alpha);
+    // Uniform 50% composition keeps every weapon/hand pose inside the lower half.
+    const c=this.texture.context;c.clearRect(0,0,480,800);c.drawImage(this.model.renderer.domElement,120,400,240,400);this.texture.refresh();this.image.setAlpha(this.pose.alpha);
     this.shade.clear();if(state.action==='death')this.shade.fillStyle(0x090710,Math.min(.82,state.elapsed/1000)).fillRect(0,0,240,400);
   }
   destroy(){if(this.destroyed)return;this.destroyed=true;this.model.destroy();this.root.destroy(true);this.scene.textures.remove(this.key);}
@@ -75,9 +76,9 @@ export function createPhaserRenderer({canvas,background,sprites,tick,getState,on
         enemyKey=key+type;
         const [old,current]=enemyImages;old.setTexture(current.texture.key).setPosition(current.x,current.y).setDisplaySize(current.displayWidth,current.displayHeight).setOrigin(current.originX,current.originY).setFlipX(current.flipX).setAlpha(current.alpha);
         activeScene.tweens.killTweensOf(enemyImages);
-        current.setTexture(textureKey).setAlpha(0);activeScene.tweens.add({targets:current,alpha:1,duration:85,ease:'Sine.easeInOut'});activeScene.tweens.add({targets:old,alpha:0,duration:85,ease:'Sine.easeInOut'});
+        current.setTexture(textureKey).setAlpha(0);activeScene.tweens.add({targets:current,alpha:1,duration:45,ease:'Sine.easeInOut'});activeScene.tweens.add({targets:old,alpha:0,duration:45,ease:'Sine.easeInOut'});
       }
-      const current=enemyImages[1],scale=size/(sheet.naturalWidth/4);current.setPosition(x-size/2+(rect.sx-rect.column*sheet.naturalWidth/4)*scale,y-size*aspect/2+(rect.sy-rect.row*rect.cellH)*scale*aspect).setOrigin(0).setDisplaySize(rect.sw*scale,rect.sh*scale*aspect).setFlipX(mirror);current.setVisible(alpha>0);enemyImages[0].setVisible(alpha>0);
+      const current=enemyImages[1],scale=size*(rect.spriteScale||1)/(sheet.naturalWidth/(rect.columns||6));current.setPosition(x-size*(rect.spriteScale||1)/2+(rect.sx-rect.column*sheet.naturalWidth/(rect.columns||6))*scale,y+size*aspect*.4-(rect.ground-rect.sy)*scale*aspect).setOrigin(0).setDisplaySize(rect.sw*scale,rect.sh*scale*aspect).setFlipX(mirror);current.setVisible(alpha>0);enemyImages[0].setVisible(alpha>0);
       if(alpha<1){current.setAlpha(alpha);enemyImages[0].setAlpha(0);}
     },
     preview(canvas,save){

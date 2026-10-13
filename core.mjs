@@ -115,18 +115,19 @@ export function impactParticles(dir,count,random=Math.random){
 export const ATTACKS = {
   normal: { label: 'PARRY · BLOCK · DODGE', cost: 24, color: '#ff535a' },
   heavy: { label: 'BLOCK ONLY', cost: 42, color: '#ff4057' },
-  sweep: { label: 'BLOCK ONLY', cost: 34, color: '#df2647' }
+  sweep: { label: 'DODGE ONLY', cost: 0, color: '#df2647' }
 };
 export function blockHit(stamina, kind = 'normal') {
+  if (kind === 'sweep') return { stamina, broken: false, blocked: false };
   const left = Math.max(0, stamina - (ATTACKS[kind] || ATTACKS.normal).cost);
-  return { stamina: left, broken: left === 0 };
+  return { stamina: left, broken: left === 0, blocked: left > 0 };
 }
 export function regenStamina(stamina, seconds, blocking) {
   return Math.min(100, stamina + Math.max(0, seconds) * (blocking ? 4 : 16));
 }
 export function defend(incoming, action, type, age, kind = 'normal') {
   if (!Number.isFinite(age) || age < 0 || age > 450) return null;
-  if (kind !== 'normal') return null;
+  if (kind === 'heavy' || (kind === 'sweep' && type !== 'dodge')) return null;
   const correct = type === 'slash' ? DIR[incoming] === action : type === 'dodge' && incoming === action;
   if (!correct) return null;
   return age <= 170 ? 'perfect' : 'normal';
