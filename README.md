@@ -79,6 +79,12 @@
 
 ## Enemy animation and visibility update
 
-Seven enemies use original inked dark-fantasy art with 30 poses each (210 total), six poses per directional attack, measured frame gutters and fixed ground anchors. Player hands and equipment render at 50% scale below the screen midpoint during every action. Skull attacks require a matching directional dodge within 450 ms (170 ms for perfect). Shields and magic wards cannot stop skull attacks; shield-icon heavy attacks remain block-only.
+Seven front-facing enemies use original `*-v2.png` dark-fantasy atlases with 40 poses each: three idle poses, guard, two hurt poses, two death poses, and eight poses per directional attack. Source-pixel ownership separates neighboring figures and retains detached weapon tips; each pose aligns to its measured foot anchor. The contact pose begins when damage resolves. Original atlases remain archived.
 
-`node tools/browser-enemies.mjs` checks the updated enemies, skull defenses, and player framing in desktop/mobile Chromium.
+Player arms render across the full viewport. Camera framing and lowered rest grips preserve the full arm length and connect both forearms to the bottom edge. Inventory outfits register to common neck, belt, knee and ankle landmarks; continuous robes, garment masks and hand occlusion keep mixed equipment coherent. Held weapons use the same solid geometry and physical grips as combat.
+
+Skull attacks require a matching directional dodge within 450 ms (170 ms for perfect). Shields and magic wards cannot stop skull attacks; shield-icon heavy attacks remain block-only.
+
+For visual inspection, run `node server.mjs --studio` and open `/tools/art-review.html`. This local studio exposes all four outfit presets, equipment combinations and 40 poses per enemy without writing a save. The normal server does not expose it.
+
+`npm test` checks frame ownership, directional timing, arm framing, equipment grips and campaign gameplay. Browser harnesses are available through `npm run test:browser` and `npm run test:enemies`; the visual repair was also inspected interactively in portrait browser layouts. Physical-phone touch testing remains outstanding.

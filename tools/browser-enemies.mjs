@@ -24,9 +24,9 @@ try{
   for(const dir of ['up','down','left','right']){
    await run(`attack={dir:'${dir}',kind:'normal',started:time,at:time+1000};draw();`);
    const keys=[];
-   for(const elapsed of [0,400,900]){await run(`time=attack.started+${elapsed};draw();`);keys.push(await run('renderer.inspect().enemyImages[1].texture.key'));}
+   for(const elapsed of [0,300,700,900]){await run(`time=attack.started+${elapsed};draw();`);keys.push(await run('renderer.inspect().enemyImages[1].texture.key'));}
    await run('resolveAttack();draw();');keys.push(await run('renderer.inspect().enemyImages[1].texture.key'));
-   assert.equal(new Set(keys).size,4,`${type}/${dir}: four distinct ready/windup/travel/contact poses`);
+   assert.equal(new Set(keys).size,5,`${type}/${dir}: distinct ready/windup/windup/travel/contact poses`);
    await run('hp=stats(save).maxHp;phase="combat";enemy.recoverUntil=0;');
   }
  }
@@ -38,7 +38,7 @@ try{
  assert.ok(await run('hp<stats(save).maxHp'));assert.equal(await run('shield'),2);assert.equal(await run('stamina'),100);
  await run('enter(1);paused=true;flash=0;shakeUntil=0;effects=[];particles=[];attack={dir:"left",kind:"sweep",at:time+600};');await render();
  await page.locator('#game').screenshot({path:'artifacts/skull-dodge-only.png'});
- // Pixel bounds from the actual final composition, with visible lower-half art.
+ // Forearms must reach the actual bottom edge, rather than a scaled inner rectangle.
  for(const weapon of ['iron-sword','greatsword','ember-staff','inferno-axe']){
   await run(`save.equipment.weapon='${weapon}';save.equipment.offhand=ITEMS['${weapon}'].hands===2?null:'wood-shield';`);
   for(const [action,dir]of [['idle','right'],['slash','up'],['slash','down'],['slash','left'],['slash','right'],['guard','right'],['block','left'],['cast','up'],['dodge','down'],['hurt','right'],['death','right']]){
@@ -48,7 +48,8 @@ try{
     for(let i=3;i<pixels.length;i+=4)if(pixels[i]>20){const y=Math.floor((i-3)/4/480);top=Math.min(top,y);bottom=Math.max(bottom,y);}
     return {top,bottom};
    },{action,dir});
-   assert.ok(bounds.top>=400,`${weapon}/${action}/${dir}: above midpoint`);assert.ok(bounds.bottom>400,`${weapon}/${action}: invisible`);
+   assert.ok(bounds.top>=0&&bounds.bottom>400,`${weapon}/${action}: invisible`);
+   if(action!=='death')assert.ok(bounds.bottom>=798,`${weapon}/${action}: arm ends inside the viewport`);
   }
  }
  await page.setViewportSize({width:390,height:844});

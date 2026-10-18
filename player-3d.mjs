@@ -7,6 +7,11 @@ import { makePixelEquipment } from './pixel-equipment.mjs';
 import { ARM_LENGTHS, RIGHT_WRIST, LEFT_WRIST, samplePlayerRig } from './player-rig.mjs';
 
 let sharedRenderer,studioEnvironment;
+export function combatCamera(aspect=.6){
+ const fov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(96/2))*.6/aspect));
+ const camera=new THREE.PerspectiveCamera(fov,aspect,.025,8);
+ camera.position.y=.14;camera.updateMatrixWorld();return camera;
+}
 export function combatWebGLRenderer(){
  if(!sharedRenderer){
   sharedRenderer=new THREE.WebGLRenderer({alpha:true,antialias:true,preserveDrawingBuffer:true,powerPreference:'high-performance'});
@@ -38,7 +43,7 @@ function segment(parent,a,b,r,mat){const start=new THREE.Vector3(...a),end=new T
 function disposeGroup(group){const geometries=new Set(),materials=new Set();group.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.material)for(const mat of Array.isArray(o.material)?o.material:[o.material])materials.add(mat);});for(const g of geometries)g.dispose();for(const m of materials)m.dispose();group.removeFromParent();}
 function prism(parent,points,depth,mat){const shape=new THREE.Shape();points.forEach(([x,y],i)=>i?shape.lineTo(x,y):shape.moveTo(x,y));shape.closePath();const g=new THREE.ExtrudeGeometry(shape,{depth,bevelEnabled:true,bevelSegments:5,curveSegments:32,steps:2,bevelSize:.004,bevelThickness:.004});g.translate(0,0,-depth/2);return mesh(parent,g,mat);}
 
-function makeWeapon(id){
+export function makeWeapon(id){
  const root=new THREE.Group(),style=WEAPON_STYLES[id];if(!style)return root;
  const {kind,length:l,color,wide,hook}=style,steel=surfaceMaterial(color,'steel'),gold=surfaceMaterial(0x8e7445,'gold'),leather=surfaceMaterial(0x433127,'leather');
  const handle=ITEMS[id]?.hands===2?.235:.125;
@@ -74,7 +79,7 @@ function makeWeapon(id){
  }
  root.userData.item=id;return root;
 }
-function makeShield(id){
+export function makeShield(id){
  const root=new THREE.Group(),color={'wood-shield':0x8b704e,'steel-shield':0x8b9cad,'guardian-shield':0xb99856,'frost-shield':0x87c6df}[id];
  const wood=surfaceMaterial(0x7a5941,'wood'),strap=surfaceMaterial(0x3d2b21,'leather'),rim=surfaceMaterial(color,id==='wood-shield'?'gold':'steel');
  const shape=new THREE.Shape();shape.moveTo(-.13,.14);shape.quadraticCurveTo(0,.205,.13,.14);shape.bezierCurveTo(.14,-.065,.09,-.17,0,-.21);shape.bezierCurveTo(-.09,-.17,-.14,-.065,-.13,.14);shape.closePath();
@@ -126,8 +131,7 @@ function makeArm(side,mats){
 export class Player3D {
  constructor(renderer=combatWebGLRenderer(),sprites={}){
   this.sprites=sprites;
-  this.renderer=renderer;this.scene=new THREE.Scene();this.camera=new THREE.PerspectiveCamera(96,480/800,.025,8);
-  this.camera.position.y=.055;
+  this.renderer=renderer;this.scene=new THREE.Scene();this.camera=combatCamera();
   this.scene.environment=studioEnvironment;this.scene.environmentIntensity=.55;this.scene.add(new THREE.HemisphereLight(0xd6e8ff,0x312537,.7));
   const keyLight=new THREE.DirectionalLight(0xffe9c2,2);keyLight.position.set(-1.5,2,1.3);this.scene.add(keyLight);
   const rim=new THREE.DirectionalLight(0x83b9ff,.7);rim.position.set(1,.4,-1);this.scene.add(rim);
