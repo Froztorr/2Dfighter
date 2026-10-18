@@ -1,3 +1,13 @@
+# Current frontal enemy atlases (2026-10-18)
+
+`brute-v2.png`, `lizard-v2.png`, `wraith-v2.png`, `knight-v2.png`, `frost-v2.png`, `spider-v2.png`, and `demon-v2.png` replace the older six-column atlases below. Seven original RGBA ImageGen images, eight columns by five rows, 40 poses per enemy (280 total). Faces and chests remain directed toward the player. Row zero contains three idle poses, guard, two hurt poses, kneeling death and fallen death. Rows one through four contain ready, two anticipation poses, travel, contact, follow-through, recovery and ready for up/down/left/right attacks.
+
+The generation brief requires a frontal camera, consistent anatomy/costume/scale, separate complete figures, transparent alpha and readable directional weapon paths. Frontal correction passes were applied to lizard, wraith, knight, frost, spider and demon; the demon idle row received a final eight-column layout repair. Built-in ImageGen originals are copied unchanged. Earlier sheets are preserved as historical sources.
+
+`tools/measure-enemies.py` assigns each opaque source pixel to one pose and emits tight bounds, pixel runs and foot anchors in `enemy-atlas.mjs`. This retains detached effects and avoids straight gutter cuts through weapons. Runtime clipping uses those ownership runs, with no crossfade ghosting. `enemyArtPose` binds painted trajectories to screen directions: knight horizontal rows are reordered, frost/demon paired two-handed cuts mirror around the measured foot anchor, and the demon rising cut uses low chamber through overhead contact. `npm test` validates all 280 masks and directional contact timing. `node server.mjs --studio` provides a save-free visual inspection page at `/tools/art-review.html`.
+
+Combat now renders full-viewport 3D arms with camera/rest-grip framing, replacing the former half-size inset. Inventory registers the original painted outfit profiles at shared anatomical landmarks and uses the combat equipment geometry at fixed hand grips, with glove occlusion and continuous robes.
+
 # Enemy sprite sheets (2026-10-13)
 
 Seven original ImageGen atlases replace all campaign enemies: brute, lizard, wraith, knight, frost, spider, demon. Dark medieval ink illustration, etched crosshatching, muted earth colors, worn metal and cloth, and ivory directional trails. The supplied references informed the overall visual treatment, not copied character designs.

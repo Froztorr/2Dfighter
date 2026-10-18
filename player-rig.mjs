@@ -12,9 +12,9 @@ const ease=t=>{t=clamp(t);return t*t*(3-2*t);};
 const v=a=>new Vector3(...a);
 const q=a=>new Quaternion().setFromEuler(new Euler(...a,'YXZ'));
 const key=(position,rotation,torso=[0,0,0])=>({position,rotation,torso});
-const ready=key([.21,-.29,-.62],[-.35,-.12,-.22]);
-const twoReady=key([.13,-.285,-.62],[-.25,-.08,-.45]);
-const offReady=key([-.21,-.30,-.64],[-.12,-.12,.18]);
+const ready=key([.25,-.29,-.62],[-.35,-.12,-.6]);
+const twoReady=key([.19,-.285,-.62],[-.25,-.08,-.7]);
+const offReady=key([-.25,-.30,-.64],[-.12,-.12,.3]);
 // Positions describe a complete cut through space: chamber, acceleration,
 // contact (110 ms), follow-through and recovery. The shoulder girdle turns too.
 export const STRIKE_KEYS={

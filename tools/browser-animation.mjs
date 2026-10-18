@@ -25,13 +25,15 @@ try{
    save.equipment.weapon=weapon;save.equipment.offhand=['greatsword','ember-staff','inferno-axe'].includes(weapon)?null:'wood-shield';
    for(const action of ['idle','slash','guard','block','parry','cast','dodge','hurt','death'])for(const dir of (action==='slash'?['up','down','left','right']:['right']))for(const elapsed of [110]){
     hero.sync({save,action,dir,elapsed,reducedMotion:true});
-    const pixels=hero.texture.context.getImageData(0,0,480,400).data;
-    if(pixels.some((value,index)=>index%4===3&&value>0))throw Error(weapon+'/'+action+'/'+dir+' crossed screen midpoint');
+    const pixels=hero.texture.context.getImageData(0,798,480,2).data;
+    if(action!=='death'&&!pixels.some((value,index)=>index%4===3&&value>20))throw Error(weapon+'/'+action+'/'+dir+' disconnected from lower edge');
    }
    hero.sync({save,action:'idle',elapsed:0,reducedMotion:true});
    const pixels=hero.texture.context.getImageData(0,400,480,400).data;
    if(!pixels.some((value,index)=>index%4===3&&value>20))throw Error('Invisible player '+weapon);
-   report.push({weapon,coverage:0});
+   const focus=hero.texture.context.getImageData(144,240,192,280).data;
+   let covered=0;for(let index=3;index<focus.length;index+=4)if(focus[index]>20)covered++;
+   report.push({weapon,coverage:covered/(192*280)});
   }
   return report;
  });

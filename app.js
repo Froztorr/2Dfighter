@@ -1,5 +1,5 @@
 import { ENEMY_ATLAS } from './enemy-atlas.mjs';
-import { enemyFrame } from './enemy-animation.mjs';
+import { enemyFrame, enemyArtPose } from './enemy-animation.mjs';
 import { playerAssets } from './fps-player.mjs';
 import { createPhaserRenderer } from './phaser-renderer.mjs';
 import { STAFF_RUNES, strikeContacts, HERO_ACTIONS, impactParticles, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
@@ -12,7 +12,7 @@ const sprites={};let spritesLoaded=0,renderFailure=false;
 function loadSprite(name){
   if(sprites[name])return sprites[name];const image=new Image();sprites[name]=image;
   image.onload=()=>{spritesLoaded++;if(spritesLoaded===Object.keys(sprites).length&&!renderFailure){$('start').disabled=false;$('assetStatus').textContent='';if(phase==='home')renderHome();}};
-  image.onerror=()=>{$('assetStatus').textContent='โหลดภาพไม่สำเร็จ กรุณารีเฟรช';};image.src=`./assets/${name}.png`;return image;
+  image.onerror=()=>{$('assetStatus').textContent='โหลดภาพไม่สำเร็จ กรุณารีเฟรช';};image.src=`./assets/${name}${ENEMY_ATLAS[name]?'-v2':''}.png`;return image;
 }
 function ensurePlayerArt(){for(const name of playerAssets(save))loadSprite(name);}
 for(const name of BASE_SPRITES)loadSprite(name);
@@ -275,16 +275,12 @@ function enemyPosition() {
 function drawEnemy() {
   const sheet=sprites[enemy?.type || 'brute'];
   if(!sheet.complete || !sheet.naturalWidth)return;
-  // All enemies share the same 30-pose layout and a fixed cell/ground anchor.
-  const frame=enemyFrame({phase,time,attack,enemy,stunned,transition});
-  let {row,column}=frame;
-  // Verified painted trajectories: these sheets place their left cut in row five.
-  if(['knight','frost'].includes(enemy?.type)&&row>=3)row=row===3?4:3;
-  const cellH=sheet.naturalHeight/5;
-  const crop=ENEMY_ATLAS[enemy?.type||'brute'].frames[row*6+column];
+  // Per-pixel frame ownership keeps adjacent weapons out of each texture.
+  const {row,column,mirror}=enemyArtPose(enemy?.type||'brute',enemyFrame({phase,time,attack,enemy,stunned,transition}));
+  const meta=ENEMY_ATLAS[enemy?.type||'brute'],crop=meta.frames[row*8+column];
   const {x,y}=enemyPosition(),size=room===2?174:156;
   const bounds=canvas.getBoundingClientRect(),aspect=(bounds.width/240)/(bounds.height/400);
-  renderer.syncEnemy({sheet,type:enemy?.type||'brute',key:`${row}:${column}`,...crop,column,row,cellH,columns:6,spriteScale:enemy?.type==='brute'?1.4:1,x,y,size,aspect,danger:attack&&attack.kind!=='normal'?{remaining:attack.at-time,clock:time,reducedMotion}:null,alpha:phase==='walking'?Math.max(0,Math.min(1,(transition-time)/500)):1});
+  renderer.syncEnemy({sheet,type:enemy?.type||'brute',key:`${row}:${column}`,...crop,column,row,mirror,bodyHeight:meta.bodyHeight,x,y,size,aspect,danger:attack?{dir:attack.dir,remaining:attack.at-time,clock:time,reducedMotion,kind:attack.kind}:null,alpha:phase==='walking'?Math.max(0,Math.min(1,(transition-time)/500)):1});
 
 }
 function resolveAttack() {

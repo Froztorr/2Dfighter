@@ -1,19 +1,11 @@
-import { ITEMS } from './core.mjs';
-import { equipmentArt, ITEM_GRIPS } from './fps-player.mjs';
 import { Player3D } from './player-3d.mjs';
+import { Portrait3D } from './player-portrait.mjs';
+import { paintEnemyFrame } from './enemy-animation.mjs';
 
-function addTexture(scene,key,sheet,rect){
+function addTexture(scene,key,sheet,rect,runs){
   if(scene.textures.exists(key))return key;
-  const tex=scene.textures.createCanvas(key,rect[2],rect[3]);tex.context.imageSmoothingEnabled=false;tex.context.drawImage(sheet,...rect,0,0,rect[2],rect[3]);tex.refresh();return key;
-}
-function drawItem(ctx,sprites,id,x,y,w,h,angle=0,grip=null){
-  const item=ITEMS[id];if(!item)return;
-  const sheet=sprites[item.atlas||'gear'],cols=item.atlas?4:6,rows=item.atlas?3:6,cw=sheet.naturalWidth/cols,ch=sheet.naturalHeight/rows;
-  const origin=grip||(item.shield?[.5,.5]:ITEM_GRIPS[id]||[.28,.78]);
-  ctx.save();ctx.translate(x,y);ctx.rotate(angle);ctx.drawImage(sheet,item.icon%cols*cw,Math.floor(item.icon/cols)*ch,cw,ch,-w*origin[0],-h*origin[1],w,h);ctx.restore();
-}
-function tintedRegion(ctx,sheet,sx,sy,sw,sh,dx,dy,dw,dh,hue=0){
-  ctx.save();if(hue)ctx.filter=`hue-rotate(${hue}deg)`;ctx.drawImage(sheet,sx,sy,sw,sh,dx,dy,dw,dh);ctx.restore();
+  const tex=scene.textures.createCanvas(key,rect[2],rect[3]),context=tex.context;context.imageSmoothingEnabled=false;
+  paintEnemyFrame(context,sheet,{sx:rect[0],sy:rect[1],sw:rect[2],sh:rect[3],runs});tex.refresh();return key;
 }
 let rigSerial=0;
 export class FirstPersonPlayer {
@@ -27,33 +19,15 @@ export class FirstPersonPlayer {
   sync(state){
     const stamp=[...Object.values(state.save.equipment),state.action,state.dir,state.elapsed,state.aspect,state.reducedMotion].join(':');if(stamp===this.stamp)return;this.stamp=stamp;
     this.pose=this.model.sync(state);this.art=this.pose.art;
-    // Uniform 50% composition keeps every weapon/hand pose inside the lower half.
-    const c=this.texture.context;c.clearRect(0,0,480,800);c.drawImage(this.model.renderer.domElement,120,400,240,400);this.texture.refresh();this.image.setAlpha(this.pose.alpha);
+    const c=this.texture.context;c.clearRect(0,0,480,800);c.drawImage(this.model.renderer.domElement,0,0,480,800);this.texture.refresh();this.image.setAlpha(this.pose.alpha);
     this.shade.clear();if(state.action==='death')this.shade.fillStyle(0x090710,Math.min(.82,state.elapsed/1000)).fillRect(0,0,240,400);
   }
   destroy(){if(this.destroyed)return;this.destroyed=true;this.model.destroy();this.root.destroy(true);this.scene.textures.remove(this.key);}
 }
 export class EquipmentPortrait {
-  constructor(scene,sprites,save){this.scene=scene;this.sprites=sprites;this.image=scene.add.image(120,200,'__WHITE');this.sync(save);}
+  constructor(scene,sprites,save){this.scene=scene;this.key=`portrait-3d:${rigSerial++}`;this.texture=scene.textures.createCanvas(this.key,240,400);this.model=new Portrait3D(undefined,sprites);this.image=scene.add.image(120,200,this.key);this.sync(save);scene.events.once('shutdown',()=>{this.model.destroy();scene.textures.remove(this.key);});}
   sync(save){
-    const signature=Object.values(save.equipment).join(':'),key=`portrait:${signature}`,sheet=this.sprites.portrait,cw=sheet.naturalWidth/4,ch=sheet.naturalHeight;
-    if(!this.scene.textures.exists(key)){
-      const tex=this.scene.textures.createCanvas(key,240,400),c=tex.context;c.imageSmoothingEnabled=false;
-      // Preserve the source figure's proportions within the portrait canvas.
-      const figureWidth=400*cw/ch;c.translate((240-figureWidth)/2,0);c.scale(figureWidth/240,1);
-      drawItem(c,this.sprites,save.equipment.cloak,120,210,215,305,0,[.5,.5]);
-      const art=equipmentArt(save),regions=[['helm',0,.18],['armor',.18,.54],['pants',.54,.76],['boots',.76,1]];
-      // Static complete figure regions, with identical pose/scale in all looks.
-      for(const [slot,start,end]of regions){const item=ITEMS[save.equipment[slot]],look=item?.look||0;tintedRegion(c,sheet,look*cw,start*ch,cw,(end-start)*ch,0,start*400,240,(end-start)*400,item?.hue||0);}
-      if(save.equipment.helm&&['frost-helm','wolf-helm'].includes(save.equipment.helm)){c.clearRect(0,0,240,64);drawItem(c,this.sprites,save.equipment.helm,120,35,110,85,0,[.5,.5]);}
-      drawItem(c,this.sprites,save.equipment.weapon,33,198,145,210,-.65);
-      drawItem(c,this.sprites,art.offhand,208,205,100,120,0,[.5,.5]);
-      for(const [x,width]of [[0,62],[188,52]])tintedRegion(c,sheet,art.look*cw+x/240*cw,185/400*ch,width/240*cw,35/400*ch,x,185,width,35,art.armorHue);
-      drawItem(c,this.sprites,save.equipment.neck,121,105,25,30,0,[.5,.5]);
-      for(const [slot,x]of [['ring1',30],['ring2',209]])drawItem(c,this.sprites,save.equipment[slot],x,195,11,12,0,[.5,.5]);
-      tex.refresh();
-    }
-    this.image.setTexture(key).setDisplaySize(240,400);this.equipment={...save.equipment};
+    this.model.sync(save);const context=this.texture.context;context.clearRect(0,0,240,400);context.drawImage(this.model.renderer.domElement,0,0,240,400);this.texture.refresh();this.equipment={...save.equipment};
   }
 }
 
@@ -71,14 +45,12 @@ export function createPhaserRenderer({canvas,background,sprites,tick,getState,on
       if(!activeScene)return;
       const {sheet,type,key,x,y,size,aspect,alpha=1,mirror=false,danger=null,...rect}=frame;
       dangerAura.clear();if(danger){const urgency=1-Math.min(1,Math.max(0,danger.remaining)/1300),pulse=danger.reducedMotion?.55:(1+Math.sin(danger.clock/(100-urgency*40)))/2;for(let ring=4;ring>=1;ring--)dangerAura.fillStyle(0xf52b43,.025+pulse*.015).fillEllipse(x,y+size*aspect*.12,size*(.62+ring*.1+pulse*.08),size*aspect*(.48+ring*.12+pulse*.08));dangerAura.lineStyle(1.5+pulse,0xff4057,.35+pulse*.45).strokeEllipse(x,y+size*aspect*.38,size*(.85+pulse*.12),size*aspect*.25);}
-      const textureKey=addTexture(activeScene,`enemy-${type}-${key}`,sheet,[rect.sx,rect.sy,rect.sw,rect.sh]);
+      const textureKey=addTexture(activeScene,`enemy-${type}-${key}`,sheet,[rect.sx,rect.sy,rect.sw,rect.sh],rect.runs);
       if(key+type!==enemyKey){
         enemyKey=key+type;
-        const [old,current]=enemyImages;old.setTexture(current.texture.key).setPosition(current.x,current.y).setDisplaySize(current.displayWidth,current.displayHeight).setOrigin(current.originX,current.originY).setFlipX(current.flipX).setAlpha(current.alpha);
-        activeScene.tweens.killTweensOf(enemyImages);
-        current.setTexture(textureKey).setAlpha(0);activeScene.tweens.add({targets:current,alpha:1,duration:45,ease:'Sine.easeInOut'});activeScene.tweens.add({targets:old,alpha:0,duration:45,ease:'Sine.easeInOut'});
+        enemyImages[0].setVisible(false);enemyImages[1].setTexture(textureKey).setAlpha(alpha);
       }
-      const current=enemyImages[1],scale=size*(rect.spriteScale||1)/(sheet.naturalWidth/(rect.columns||6));current.setPosition(x-size*(rect.spriteScale||1)/2+(rect.sx-rect.column*sheet.naturalWidth/(rect.columns||6))*scale,y+size*aspect*.4-(rect.ground-rect.sy)*scale*aspect).setOrigin(0).setDisplaySize(rect.sw*scale,rect.sh*scale*aspect).setFlipX(mirror);current.setVisible(alpha>0);enemyImages[0].setVisible(alpha>0);
+      const current=enemyImages[1],scale=size*.78/rect.bodyHeight;current.setPosition(x+(mirror?rect.anchorX-rect.sx-rect.sw:rect.sx-rect.anchorX)*scale,y+size*aspect*.4-(rect.ground-rect.sy)*scale*aspect).setOrigin(0).setDisplaySize(rect.sw*scale,rect.sh*scale*aspect).setFlipX(mirror).setAlpha(alpha);current.setVisible(alpha>0);enemyImages[0].setVisible(false);
       if(alpha<1){current.setAlpha(alpha);enemyImages[0].setAlpha(0);}
     },
     preview(canvas,save){

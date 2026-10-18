@@ -7,7 +7,52 @@ const enemies=await import('./enemy-animation.mjs');
 const atlas=await import('./enemy-atlas.mjs');
 const core = await import('./core.mjs').catch(() => ({}));
 
+test('combat fills the viewport and shoulders continue beyond the bottom edge',async()=>{
+ const {combatCamera}=await import('./player-3d.mjs');
+ const {samplePlayerRig}=await import('./player-rig.mjs');
+ for(const aspect of [.6,390/844,320/667]){
+  const camera=combatCamera(aspect),pose=samplePlayerRig({save:core.newSave()});camera.updateMatrixWorld();
+  for(const side of ['left','right'])assert.ok(pose[side].shoulder.clone().project(camera).y < -1,'arm roots must exit the screen rather than end inside it');
+ }
+});
+
+test('portrait physically attaches equipment and removes the offhand for two-handed weapons',async()=>{
+ const {Portrait3D}=await import('./player-portrait.mjs');const {Vector3}=await import('./vendor/three.module.js');
+ const save=core.newSave(),portrait=new Portrait3D({render(){},renderLists:{dispose(){}}});
+ for(const outfit of [
+  {helm:'wolf-helm',armor:'leather-vest',pants:'mage-pants',boots:'plate-boots',weapon:'iron-sword',offhand:'wood-shield'},
+  {helm:'mage-hat',armor:'inferno-robe',pants:'iron-greaves',boots:'trail-boots',weapon:'demon-staff',offhand:null},
+  {helm:'rogue-hood',armor:'frost-plate',weapon:'venom-dagger',offhand:'assassin-dagger'}
+ ]){
+  Object.assign(save.equipment,outfit);portrait.sync(save);
+  assert.equal(portrait.weapon.userData.item,save.equipment.weapon);
+  assert.equal(portrait.leftGrip.children.length,core.ITEMS[save.equipment.weapon].hands===2?0:1);
+  assert.ok(portrait.weapon.getWorldPosition(new Vector3()).distanceTo(portrait.rightGrip.getWorldPosition(new Vector3()))<1e-6);
+ }
+ portrait.destroy();
+});
+
 test('impact particles follow the hit direction',()=>{assert.ok(core.impactParticles('up',10).every(p=>p.vy<0));assert.ok(core.impactParticles('right',10).every(p=>p.vx>0));});
+
+test('enemy frame masks isolate all 280 poses without shared source pixels',()=>{
+ for(const [name,meta]of Object.entries(atlas.ENEMY_ATLAS)){
+  assert.equal(meta.frames.length,40);const owners=new Uint8Array(meta.width*meta.height);
+  for(const frame of meta.frames){
+   assert.ok(frame.sx>=0&&frame.sy>=0&&frame.sx+frame.sw<=meta.width&&frame.sy+frame.sh<=meta.height);
+   assert.ok(frame.anchorX>=frame.sx&&frame.anchorX<=frame.sx+frame.sw);
+   let area=0;for(const [x,y,width]of frame.runs){assert.ok(x>=0&&y>=0&&x+width<=frame.sw&&y<frame.sh);for(let dx=0;dx<width;dx++){const pixel=(frame.sy+y)*meta.width+frame.sx+x+dx;assert.equal(owners[pixel],0,`${name}: a neighbor leaked into a frame`);owners[pixel]=1;area++;}}
+   assert.ok(area>200);
+  }
+ }
+});
+
+test('directional art mappings retain eight valid, distinct source poses',()=>{
+ for(const [type,meta]of Object.entries(atlas.ENEMY_ATLAS))for(let row=1;row<5;row++){
+  const poses=Array.from({length:8},(_,column)=>enemies.enemyArtPose(type,{row,column}));
+  assert.equal(new Set(poses.map(p=>`${p.row}:${p.column}`)).size,8,`${type}/${row} repeats a source pose`);
+  for(const pose of poses){const crop=meta.frames[pose.row*8+pose.column];assert.ok(crop?.runs.length);}
+ }
+});
 
 test('daily quests reset at Bangkok midnight and pay once, minigame prizes are capped and survive reload',()=>{
   const s=core.newSave(),before=Date.parse('2026-09-22T16:59:59Z'),after=before+1000;
@@ -131,7 +176,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   const imageCalls=[];
   const drawing=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
   const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{setProperty(){}},dataset:{},hidden:true,setAttribute(){},classList:{toggle(){}},addEventListener(type,fn){events.set(id+':'+type,fn);},getContext:()=>drawing,querySelector:()=>node('heading'),getBoundingClientRect:()=>({left:0,top:0,width:240,height:400}),setPointerCapture(){}});return nodes.get(id);};
-  const context=vm.createContext({...core,...fps,...enemies,...atlas,createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){const meta=atlas.ENEMY_ATLAS[path.split('/').at(-1).replace('.png','')];if(meta){this.naturalWidth=meta.width;this.naturalHeight=meta.height;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
+  const context=vm.createContext({...core,...fps,...enemies,...atlas,createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){const meta=atlas.ENEMY_ATLAS[path.split('/').at(-1).replace(/(?:-v2)?\.png$/,'')];if(meta){this.naturalWidth=meta.width;this.naturalHeight=meta.height;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
   const source=(await readFile(new URL('./app.js',import.meta.url),'utf8')).replace(/^import[^\n]+\n/gm,'');
   vm.runInContext(source,context);
   const run=s=>vm.runInContext(s,context);
@@ -377,18 +422,18 @@ test('dual-wielded cuts drive both hands through directional attacks and preserv
 });
 
 
-test('enemy sequences use all six attack frames and never show contact before damage',()=>{
+test('enemy sequences use eight attack frames and never show contact before damage',()=>{
  for(const [i,dir] of ['up','down','left','right'].entries()){
   const enemy={dir,recoverUntil:1640,strikeUntil:1160};
   const attack={dir,started:0,at:1000};
-  const frames=[0,400,900].map(time=>enemies.enemyFrame({phase:'combat',time,attack,enemy}));
-  frames.push(...[1000,1200,1500].map(time=>enemies.enemyFrame({phase:'combat',time,enemy})));
-  assert.deepEqual(frames.map(f=>f.column),[0,1,2,3,4,5]);
+  const frames=[0,300,700,900].map(time=>enemies.enemyFrame({phase:'combat',time,attack,enemy}));
+  frames.push(...[1000,1200,1400,1550].map(time=>enemies.enemyFrame({phase:'combat',time,enemy})));
+  assert.deepEqual(frames.map(f=>f.column),[0,1,2,3,4,5,6,7]);
   assert.ok(frames.every(f=>f.row===i+1));
  }
  assert.deepEqual(enemies.enemyFrame({phase:'combat',time:0,enemy:{}}),{row:0,column:0});
  assert.deepEqual(enemies.enemyFrame({phase:'combat',time:280,enemy:{}}),{row:0,column:1});
- assert.deepEqual(enemies.enemyFrame({phase:'combat',time:280,enemy:{hit:500}}),{row:0,column:3});
- assert.deepEqual(enemies.enemyFrame({phase:'walking',time:100,transition:1500}),{row:0,column:4});
- assert.deepEqual(enemies.enemyFrame({phase:'walking',time:600,transition:1500}),{row:0,column:5});
+ assert.deepEqual(enemies.enemyFrame({phase:'combat',time:280,enemy:{hit:500}}),{row:0,column:5});
+ assert.deepEqual(enemies.enemyFrame({phase:'walking',time:100,transition:1500}),{row:0,column:6});
+ assert.deepEqual(enemies.enemyFrame({phase:'walking',time:600,transition:1500}),{row:0,column:7});
 });
