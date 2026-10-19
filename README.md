@@ -47,7 +47,9 @@
 
 ชุดเกราะเปลี่ยนวัสดุของแขนและถุงมือในโมเดล 3D การตายลดมือพร้อม fade ก่อนเปิดผลแพ้ หมวกและรองเท้าดูได้ในหน้าสวมอุปกรณ์ เพราะมุมมองต่อสู้ไม่เห็นส่วนเหล่านี้
 
-หน้าสวมอุปกรณ์ใช้ Phaser Scene และ `portrait.png` ภาพเต็มตัวใหม่สี่รูปลักษณ์ สัดส่วนรักษาตามภาพต้นฉบับและแสดงของแต่ละช่องที่สวม
+หน้าสวมอุปกรณ์ใช้ `equipment-rig.mjs`: โมเดล Three.js แบบ orthographic 2.5D มี skeleton 22 ข้อ เสื้อ แขน และขาเป็น skinned mesh ที่ใช้กระดูกร่วมกัน อุปกรณ์เปลี่ยนชิ้นส่วนตาม slot และซ่อนส่วนฐานที่ถูกแทน อาวุธ geometry เดียวกับ combat ผูกกับ palm socket; อาวุธสองมือใช้ IK จับด้ามร่วมกันจริง มี idle breathing, cloth sway, ท่าฟัน และปุ่มหมุนใน inventory โดยไม่เปลี่ยน save format หรือค่าสถานะ
+
+หลักการประกอบชิ้นส่วนศึกษาจาก RanOnline (`DxSkinChar::SetPiece`, `DxSkinPiece::SetSkinMesh`, `DxCharPart` hand-bone attachment) แล้วเขียนใหม่สำหรับ Three.js ไม่ได้นำ engine C++ หรือ assets ของ Ran มาใช้ ดู [รายละเอียดและผลตรวจ](docs/rigged-equipment.md)
 
 ## Verification
 

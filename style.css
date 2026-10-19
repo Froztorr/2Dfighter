@@ -39,6 +39,7 @@
 @media(max-height:740px){.hallTitle{padding-top:4vh}.hallStory{margin-top:15vh}.homeScreen{padding-inline:18px}.homeNav button{padding:9px 2px}}
 
 #heroPreview{width:clamp(220px,56vw,280px)}
+.poseControls{display:flex;justify-content:center;gap:4px;margin-top:8px;z-index:1}.poseControls button{padding:7px 8px;border:1px solid #8d774e;background:#202a28;color:#dec692;font-size:12px;min-height:34px}
 
 #attackArrow[hidden]{display:none}
 .telegraph[data-directional="false"] .attackBadge{border-color:#ff4057}

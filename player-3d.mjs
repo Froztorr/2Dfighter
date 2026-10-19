@@ -6,7 +6,8 @@ import { ITEMS } from './core.mjs';
 import { makePixelEquipment } from './pixel-equipment.mjs';
 import { ARM_LENGTHS, RIGHT_WRIST, LEFT_WRIST, samplePlayerRig } from './player-rig.mjs';
 
-let sharedRenderer,studioEnvironment;
+let sharedRenderer;
+export let studioEnvironment;
 export function combatCamera(aspect=.6){
  const fov=THREE.MathUtils.radToDeg(2*Math.atan(Math.tan(THREE.MathUtils.degToRad(96/2))*.6/aspect));
  const camera=new THREE.PerspectiveCamera(fov,aspect,.025,8);

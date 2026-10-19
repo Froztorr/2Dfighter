@@ -212,7 +212,10 @@ function renderPanel() {
   $('panelBody').innerHTML = summary+(tab==='gear' ? gear + `<p>EXP ${save.xp} / ${save.level*100}</p><div class="upgrade">Vigor +12 HP / Edge +2 ATK</div>` + upgrades + '<button class="returnHall" data-home="map">แผนที่การเดินทาง →</button>' : `<div class="inventory">${Object.entries(ITEMS).map(([id,item])=>`<button class="inventoryItem" data-buy="${id}" ${save.owned.includes(id)||save.gold<item.cost?'disabled':''}>${itemIcon(id)}<b>${item.name}</b><small>${itemStats(item)}</small><span>${save.owned.includes(id)?'OWNED':'◈ '+item.cost}</span></button>`).join('')}</div><button class="primary" data-potion-buy ${save.gold<40||save.potions>=99?'disabled':''}>HEALING POTION · 40 GOLD</button>`);
   if(tab==='quests')$('panelBody').innerHTML=questPanel();
   if(tab==='camp')$('panelBody').innerHTML=campPanel();
-  if(tab==='gear')renderer.preview($('heroPreview'),save);else renderer.closePreview();
+  if(tab==='gear'){
+    $('panelBody').querySelector('.heroDisplay').insertAdjacentHTML('beforeend','<div class="poseControls"><button data-preview="left" aria-label="หมุนตัวละครซ้าย">↶</button><button data-preview="slash">ลองฟัน</button><button data-preview="right" aria-label="หมุนตัวละครขวา">↷</button></div>');
+    renderer.preview($('heroPreview'),save);
+  }else renderer.closePreview();
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); hud();
 }
 function renderHome(){
@@ -223,19 +226,21 @@ function renderHome(){
     `<div class="mapHeading"><button data-home="hall">← โถงหลัก</button><h1>THE EXPEDITION</h1><p>เลือกด่าน · ชนะบอสเพื่อเปิดเส้นทางถัดไป</p></div><div class="stageMap">${FLOORS.map((f,i)=>`<button class="stageNode ${selectedFloor===i+1?'selected':''}" data-select-floor="${i+1}" ${i>=save.unlocked?'disabled':''}><span class="stageNumber">${i>=save.unlocked?'◇':String(i+1).padStart(2,'0')}</span><span><b>${f.name}</b><small>${i>=save.unlocked?'LOCKED · ผ่านด่านก่อนหน้า':save.bestStars[i+1]?'CLEARED':'UNEXPLORED'}</small></span><span class="mapStars">${'★'.repeat(save.bestStars[i+1]||0)}${'☆'.repeat(3-(save.bestStars[i+1]||0))}</span></button>`).join('')}</div><div class="expeditionDetail"><small>THREE ENCOUNTERS · ONE BOSS</small><h2>${floors[selectedFloor-1]}</h2><p>${FLOORS[selectedFloor-1].enemies.map(t=>enemyTypes[t]).join(' → ')}</p><div class="mapLoot">${FLOORS[selectedFloor-1].drops.map(id=>`<span>${itemIcon(id)}<small>${ITEMS[id].name}</small></span>`).join('')}</div><button class="primary" data-embark="${selectedFloor}" ${renderFailure||spritesLoaded<Object.keys(sprites).length?'disabled':''}>ออกเดินทาง · FLOOR ${selectedFloor}</button></div>`;
 }
 function goHome(view='hall'){
+  renderer.closePreview();
   phase='home';homeView=view;selectedFloor=Math.min(save.unlocked,Math.max(1,selectedFloor));paused=false;attack=null;pendingSlash=null;enemy=null;mini=null;releaseGuard();pointer=null;trail=[];particles=[];cuts=[];hitStop=0;heroAction={type:'idle',dir:'right',at:time};$('panel').hidden=true;$('intro').hidden=false;ensurePlayerArt();renderHome();hud();
 }
 function enter(n) { if(!Number.isInteger(n)||n<1||n>floors.length)return;floor=n;room=0;hp=stats(save).maxHp;mini=null;run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:hp};rewardUntil=0;hitStop=0;particles=[];cuts=[];flash=0;heroAction={type:'idle',dir:'right',at:time};shield=0;cooldown={};nextSlash=nextDodge=0;stamina=100;playerStunned=stunStarted=deathPanelAt=victoryAt=regenAt=attackCount=0;releaseGuard();paused=false;$('panel').hidden=true;spawn(); }
 function drinkPotion(){if(phase!=='combat'||paused||playerStunned>time||hp>=stats(save).maxHp||!save.potions)return;save.potions--;run.potions++;hp=Math.min(stats(save).maxHp,hp+50);animateHero('heal');say('+50 HP · HEALING POTION');persist();hud();}
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
+  if(b.dataset.preview){renderer.previewPose(b.dataset.preview);return;}
   if(b.id==='start'){homeView='map';selectedFloor=save.unlocked;renderHome();}
   if(b.dataset.home)goHome(b.dataset.home);
   if(b.dataset.selectFloor&&Number(b.dataset.selectFloor)<=save.unlocked){selectedFloor=Number(b.dataset.selectFloor);renderHome();}
   if(b.dataset.embark&&!renderFailure&&Number(b.dataset.embark)<=save.unlocked&&spritesLoaded===Object.keys(sprites).length){$('intro').hidden=true;enter(Number(b.dataset.embark));}
   if(b.dataset.hub){tab=b.dataset.hub;openPanel();}
   if(b.id==='heroBtn'||b.id==='menuBtn')openPanel();
-  if(b.hasAttribute('data-close')){ mini=null;$('panel').hidden=true;paused=false;if(phase==='home')renderHome(); }
+  if(b.hasAttribute('data-close')){ mini=null;renderer.closePreview();$('panel').hidden=true;paused=false;if(phase==='home')renderHome(); }
   if(b.dataset.tab){mini=null;tab=b.dataset.tab;renderPanel();}
   if(b.dataset.quest){const reward=claimQuest(save,b.dataset.quest);if(reward){campNotice=rewardText(reward);persist();renderPanel();}}
   if(b.dataset.mini)startMini(b.dataset.mini);
