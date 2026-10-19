@@ -47,8 +47,8 @@ export function gripPoint(transform,offset=new Vector3()){return offset.clone().
 
 // Two-bone analytic IK: fixed bone lengths with a moving elbow pole. No arm
 // scaling, straight-line elbow approximation or detached weapon overlays.
-export function solveArm(shoulder,target,pole){
- const {upper:a,forearm:b}=ARM_LENGTHS;
+export function solveArm(shoulder,target,pole,lengths=ARM_LENGTHS){
+ const {upper:a,forearm:b}=lengths;
  const delta=target.clone().sub(shoulder),requested=delta.length();
  const distance=Math.max(.04,Math.min(a+b-.00001,requested)),axis=delta.clone().normalize();
  const bend=pole.clone().sub(shoulder);bend.addScaledVector(axis,-bend.dot(axis));

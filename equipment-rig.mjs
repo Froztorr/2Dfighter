@@ -1,0 +1,248 @@
+import * as THREE from './vendor/three.module.js';
+import {ITEMS} from './core.mjs';
+import {organicLimb,sculptedHand} from './player-sculpt.mjs';
+import {surfaceMaterial} from './player-materials.mjs';
+import {artCanvas} from './equipment-art.mjs';
+import {solveArm} from './player-rig.mjs';
+import {makeWeapon,makeShield,WEAPON_STYLES,combatWebGLRenderer,studioEnvironment} from './player-3d.mjs';
+import {makePixelEquipment} from './pixel-equipment.mjs';
+
+const clamp=THREE.MathUtils.clamp;
+function mesh(parent,geometry,material,position=[0,0,0],scale=[1,1,1]){const object=new THREE.Mesh(geometry,material);object.position.set(...position);object.scale.set(...scale);parent.add(object);return object;}
+function oval(parent,radius,material,position,scale){return mesh(parent,new THREE.SphereGeometry(radius,32,20),material,position,scale);}
+function band(parent,radius,material,position,scale=[1,1,1]){const object=mesh(parent,new THREE.TorusGeometry(radius,.004,8,40),material,position,scale);object.rotation.x=Math.PI/2;return object;}
+function release(root,shared=new Set()){const geometry=new Set(),material=new Set();root.traverse(o=>{if(o.geometry)geometry.add(o.geometry);if(o.material)for(const m of Array.isArray(o.material)?o.material:[o.material])material.add(m);});for(const g of geometry)g.dispose();for(const m of material)if(!shared.has(m))m.dispose();root.removeFromParent();}
+function tube(profile,flatten=.72){return organicLimb(1,profile,flatten);}
+function planarUV(geometry){geometry.computeBoundingBox();const p=geometry.attributes.position,b=geometry.boundingBox,uv=[];for(let i=0;i<p.count;i++)uv.push((p.getX(i)-b.min.x)/(b.max.x-b.min.x),1-(p.getY(i)-b.min.y)/(b.max.y-b.min.y));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));return geometry;}
+function ribbon(points,radius,material,parent){const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));return mesh(parent,new THREE.TubeGeometry(curve,32,radius,6,false),material);}
+
+export class CharacterRig {
+ constructor(sprites={}){
+  this.root=new THREE.Group();this.bones={};this.equipment={};this.sprites=sprites;this.textures=new Map();
+  const bone=(name,parent,x=0,y=0,z=0)=>{const b=new THREE.Bone();b.name=name;b.position.set(x,y,z);parent.add(b);this.bones[name]=b;return b;};
+  const hips=bone('hips',this.root,0,.9),spine=bone('spine',hips,0,.14),chest=bone('chest',spine,0,.21),neck=bone('neck',chest,0,.20),head=bone('head',neck,0,.16);
+  this.arms={};this.legs={};
+  for(const [side,sign]of [['right',-1],['left',1]]){
+   const shoulder=bone(side+'Shoulder',chest,sign*.205,.14),elbow=bone(side+'Elbow',shoulder,0,-.29),wrist=bone(side+'Wrist',elbow,0,-.255),grip=bone(side+'Grip',wrist,0,-.055,.014);
+   this.arms[side]={shoulder,elbow,wrist,grip,sign};
+   const hip=bone(side+'Hip',hips,sign*.097,-.02),knee=bone(side+'Knee',hip,0,-.41),ankle=bone(side+'Ankle',knee,0,-.39);this.legs[side]={hip,knee,ankle,sign};
+  }
+  const cape=bone('cape',chest,0,.10,-.13),capeMid=bone('capeMid',cape,0,-.5,-.025);bone('capeHem',capeMid,0,-.5,-.035);
+  this.root.updateMatrixWorld(true);this.skeleton=new THREE.Skeleton(Object.values(this.bones));this.skeleton.calculateInverses();
+  this.bindPositions=new Map(this.skeleton.bones.map(b=>[b,b.position.clone()]));
+  this.base={};const baseMat=this.material('base',0x353b40,'cloth',[.24,.20,.76,.44]),bootMat=surfaceMaterial(0x302923,'leather');
+  this.mats={skin:surfaceMaterial(0xb98c6c,'leather',{bumpScale:.0001,roughness:.85}),glove:surfaceMaterial(0x493020,'leather'),hair:surfaceMaterial(0x39291f,'leather'),gold:surfaceMaterial(0x9d7b43,'gold'),dark:surfaceMaterial(0x242327,'cloth')};
+  this.base.torso=this.group('base-torso');this.torso(this.base.torso,baseMat);
+  this.base.arms=this.group('base-arms');this.sleeves(this.base.arms,baseMat);
+  this.base.pants=this.group('base-pants');this.trousers(this.base.pants,baseMat);
+  this.base.boots=this.group('base-boots');this.boots(this.base.boots,bootMat,false);
+  mesh(neck,new THREE.CylinderGeometry(.052,.064,.12,32),this.mats.skin,[0,.035,0]);
+  oval(head,.11,this.mats.hair,[0,.005,-.009],[.92,1.27,.86]);
+  const headGeometry=new THREE.SphereGeometry(.11,48,32,0,Math.PI);
+  const p=headGeometry.attributes.position,uv=headGeometry.attributes.uv;
+  for(let i=0;i<p.count;i++)uv.setXY(i,p.getX(i)/.22+.5,p.getY(i)/.22+.5);
+  let face=this.mats.skin;
+  if(sprites['doll-base']?.complete&&typeof document!=='undefined'){
+   const canvas=document.createElement('canvas');canvas.width=168;canvas.height=224;const c=canvas.getContext('2d');c.drawImage(sprites['doll-base'],427,41,168,224,0,0,168,224);
+   const map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;map.magFilter=THREE.NearestFilter;map.minFilter=THREE.LinearFilter;this.faceTexture=map;
+   face=new THREE.MeshStandardMaterial({map,roughness:.95,metalness:0});
+  }
+  mesh(head,headGeometry,face,[0,0,.001],[.92,1.27,.86]);
+  for(const sign of [-1,1])oval(head,.022,this.mats.skin,[sign*.105,-.005,0],[.55,1,.55]);
+  for(const [side,arm]of Object.entries(this.arms)){
+   const hand=mesh(arm.grip,sculptedHand(side),this.mats.glove);hand.scale.setScalar(1.03);arm.hand=hand;
+   band(arm.wrist,.029,this.mats.gold,[0,-.005,0],[1,1,.85]);
+  }
+  this.pose({time:0,reducedMotion:true});
+ }
+ group(name,parent=this.root){const group=new THREE.Group();group.name=name;parent.add(group);return group;}
+ material(id,color,kind,region=[0,0,1,1]){
+  const mat=surfaceMaterial(color,kind,{side:THREE.DoubleSide}),image=artCanvas(this.sprites,id);if(!image)return mat;
+  const key=id+':'+region.join(':');let map=this.textures.get(key);
+  if(!map){
+   const canvas=document.createElement('canvas');canvas.width=128;canvas.height=256;const c=canvas.getContext('2d',{willReadFrequently:true});c.drawImage(image,region[0]*image.width,region[1]*image.height,(region[2]-region[0])*image.width,(region[3]-region[1])*image.height,0,0,128,256);
+   const pixels=c.getImageData(0,0,128,256),data=pixels.data;
+   // Atlas transparency is outside the tailoring pattern, not a hole through the garment mesh.
+   for(let y=0;y<256;y++){
+    let first=-1;for(let x=0;x<128;x++)if(data[(y*128+x)*4+3]>100){first=x;break;}
+    let source=first;
+    for(let x=0;x<128;x++){const i=(y*128+x)*4;if(data[i+3]>100)source=x;else if(source>=0){const from=(y*128+source)*4;data[i]=data[from];data[i+1]=data[from+1];data[i+2]=data[from+2];}else{data[i]=90;data[i+1]=70;data[i+2]=56;}data[i+3]=255;}
+   }
+   c.putImageData(pixels,0,0);map=new THREE.CanvasTexture(canvas);map.colorSpace=THREE.SRGBColorSpace;map.magFilter=THREE.NearestFilter;map.minFilter=THREE.LinearFilter;this.textures.set(key,map);
+  }
+  mat.map=map;mat.color.setHex(0xffffff);mat.metalness=kind==='steel'?.35:0;mat.bumpScale=.0003;return mat;
+ }
+ skin(group,geometry,material,weights){
+  const p=geometry.attributes.position,indices=[],values=[];
+  for(let i=0;i<p.count;i++){
+   const influence=weights(p.getX(i),p.getY(i),p.getZ(i));
+   for(let j=0;j<4;j++){indices.push(influence[j]?this.skeleton.bones.indexOf(this.bones[influence[j][0]]):0);values.push(influence[j]?.[1]||0);}
+  }
+  geometry.setAttribute('skinIndex',new THREE.Uint16BufferAttribute(indices,4));geometry.setAttribute('skinWeight',new THREE.Float32BufferAttribute(values,4));
+  const object=new THREE.SkinnedMesh(geometry,material);group.add(object);object.bind(this.skeleton,new THREE.Matrix4());object.frustumCulled=false;return object;
+ }
+ torso(group,mat,bulk=0){
+  const geometry=tube([[.84,.145+bulk],[.91,.151+bulk],[1.02,.126+bulk],[1.16,.176+bulk],[1.32,.205+bulk],[1.4,.194+bulk],[1.445,.074+bulk]],.63);planarUV(geometry);for(let i=0;i<geometry.attributes.uv.count;i++)geometry.attributes.uv.setY(i,1-geometry.attributes.uv.getY(i));
+  return this.skin(group,geometry,mat,(x,y)=>y<1.04?[['hips',clamp((1.1-y)/.2,0,1)],['spine',1-clamp((1.1-y)/.2,0,1)]]:[['spine',clamp((1.26-y)/.22,0,1)],['chest',1-clamp((1.26-y)/.22,0,1)]]);
+ }
+ sleeves(group,mat,plate=false,id=null){
+  const sleeve=id?this.material(id,mat.color.getHex(),plate?'steel':'cloth',plate?[0,.20,.31,.94]:[0,.08,.25,.4]):mat;
+  for(const [side,arm]of Object.entries(this.arms)){
+   const upper=this.group('shoulder-cap',arm.shoulder);group.userData.attached??=[];group.userData.attached.push(upper);
+   oval(upper,.066,sleeve,[0,-.005,0],[1,1,.82]);
+   const g=planarUV(organicLimb(.545,[[0,.066],[.12,.076],[.4,.055],[.53,.046],[.68,.055],[.85,.04],[1,.027]],.82));g.rotateZ(Math.PI);g.translate(arm.sign*.205,1.39,0);
+   this.skin(group,g,sleeve,(x,y)=>{const blend=clamp((1.14-y)/.08,0,1);return [[side+'Shoulder',1-blend],[side+'Elbow',blend]];});
+   if(plate)oval(upper,.085,mat,[arm.sign*.012,-.025,.009],[1,.65,.95]);
+  }
+ }
+ trousers(group,mat,plate=false,id=null){
+  const geometry=new THREE.SphereGeometry(.153,40,24);geometry.scale(1,.60,.74);geometry.translate(0,.883,0);planarUV(geometry);for(let i=0;i<geometry.attributes.uv.count;i++)geometry.attributes.uv.setY(i,1-geometry.attributes.uv.getY(i));this.skin(group,geometry,mat,()=>[['hips',1]]);
+  for(const [side,leg]of Object.entries(this.legs)){
+   const half=leg.sign<0?0:.5,legMat=id?this.material(id,mat.color.getHex(),plate?'steel':'leather',[half,.22,half+.5,1]):mat;
+   const g=planarUV(organicLimb(.8,[[0,.087],[.12,.09],[.36,.067],[.51,.049],[.65,.061],[.83,.041],[1,.031]],.82));g.rotateZ(Math.PI);g.translate(leg.sign*.097,.88,0);
+   this.skin(group,g,legMat,(x,y)=>{const blend=clamp((.51-y)/.08,0,1);return [[side+'Hip',1-blend],[side+'Knee',blend]];});
+   const trim=this.group('trouser-trim',leg.hip);group.userData.attached??=[];group.userData.attached.push(trim);
+   if(plate){const knee=this.group('knee-plate',leg.knee);group.userData.attached.push(knee);oval(knee,.062,mat,[0,-.015,.029],[1,.85,.65]);}
+   ribbon([[0,-.035,.076],[0,-.18,.073],[0,-.36,.047]],.0015,this.mats.gold,trim);
+  }
+ }
+ boots(group,mat,tall,id=null){
+  for(const leg of Object.values(this.legs)){
+   const foot=this.group('boot',leg.ankle);group.userData.attached??=[];group.userData.attached.push(foot);
+   oval(foot,.065,mat,[0,-.03,.036],[.76,.65,1.55]);oval(foot,.061,this.mats.dark,[0,-.062,.04],[.8,.14,1.62]);
+   mesh(foot,new THREE.CylinderGeometry(tall?.063:.037,.034,tall?.29:.09,32,6),mat,[0,tall?.13:.035,0],[1,1,.86]);
+   band(foot,tall?.064:.039,this.mats.gold,[0,tall?.275:.08,0],[1,1,.86]);
+   for(const y of [0,.035])band(foot,.038,this.mats.glove,[0,y,0],[1,1,.88]);
+   if(tall){
+    const half=leg.sign<0?0:.5,front=id?this.material(id,mat.color.getHex(),id==='plate-boots'?'steel':'leather',[half,0,half+.5,.7]):mat,g=planarUV(new THREE.SphereGeometry(.055,32,20));
+    for(let i=0;i<g.attributes.uv.count;i++)g.attributes.uv.setY(i,1-g.attributes.uv.getY(i));mesh(foot,g,front,[0,.145,.034],[.90,2.55,.40]);
+    for(const [y,r]of [[.10,.047],[.215,.058]]){band(foot,r,this.mats.glove,[0,y,0],[1,1,.86]);oval(foot,.006,this.mats.gold,[.019,y,r*.9],[1,1,.5]);}
+   }
+  }
+ }
+ belt(group,mat){
+  const geometry=new THREE.CylinderGeometry(.149,.153,.052,48,1,true);geometry.scale(1,1,.65);geometry.translate(0,.93,0);this.skin(group,geometry,mat,()=>[['hips',1]]);
+  const buckle=this.group('buckle',this.bones.hips);group.userData.attached??=[];group.userData.attached.push(buckle);
+  const ring=mesh(buckle,new THREE.TorusGeometry(.027,.005,6,4),this.mats.gold,[0,.03,.106]);ring.rotation.z=Math.PI/4;
+ }
+ cape(group,mat){
+  const positions=[],uv=[],indices=[],rows=24,columns=20;
+  for(let y=0;y<=rows;y++)for(let x=0;x<=columns;x++){
+   const t=y/rows,u=x/columns*2-1,width=.19+t*.13;
+   positions.push(u*width,1.40-t*1.19+Math.abs(u)**1.5*.045*t,-.14-.04*t-.035*(1-u*u)+Math.cos(u*20)*.012*t);uv.push(x/columns,1-t);
+  }
+  for(let y=0;y<rows;y++)for(let x=0;x<columns;x++){const a=y*(columns+1)+x,b=a+columns+1;indices.push(a,a+1,b,a+1,b+1,b);}
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));geometry.setIndex(indices);geometry.computeVertexNormals();
+  this.skin(group,geometry,mat,(x,y)=>{const t=clamp((1.40-y)/.5,0,2),low=Math.min(1,Math.floor(t)),names=['cape','capeMid','capeHem'];return [[names[low],1-(t-low)],[names[low+1],t-low]];});
+  const collar=this.group('cape-clasp',this.bones.chest);group.userData.attached=[collar];
+  for(const sign of[-1,1])oval(collar,.068,mat,[sign*.135,.15,-.015],[1.15,.28,1.5]);
+  ribbon([[-.13,.16,.07],[-.06,.115,.104],[.06,.115,.104],[.13,.16,.07]],.005,this.mats.gold,collar);
+ }
+ robe(group,mat){
+  const geometry=tube([[.11,.28],[.2,.275],[.55,.22],[.8,.17],[.95,.15]],.74);planarUV(geometry);for(let i=0;i<geometry.attributes.uv.count;i++)geometry.attributes.uv.setY(i,1-geometry.attributes.uv.getY(i));
+  this.skin(group,geometry,mat,(x,y)=>{const blend=clamp((.9-y)/.75,0,.42),side=x<0?'rightHip':'leftHip';return [['hips',1-blend],[side,blend]];});
+  for(const sign of [-1,1]){const panel=this.group('robe-trim',this.bones.hips);group.userData.attached??=[];group.userData.attached.push(panel);ribbon([[sign*.04,.02,.118],[sign*.08,-.34,.153],[sign*.18,-.77,.177]],.004,this.mats.gold,panel);}
+ }
+ headgear(group,id,mat){
+  const mount=this.group('headgear',this.bones.head);group.userData.attached=[mount];
+  if(id==='mage-hat'){
+   mesh(mount,new THREE.CylinderGeometry(.17,.19,.018,48),mat,[0,.075,0],[1,1,.85]);
+   const g=new THREE.ConeGeometry(.115,.29,40,12),p=g.attributes.position;for(let i=0;i<p.count;i++)p.setX(i,p.getX(i)+Math.max(0,p.getY(i))**2*3);g.computeVertexNormals();mesh(mount,g,mat,[0,.22,0]);band(mount,.113,this.mats.gold,[0,.095,0]);
+  }else if(id==='rogue-hood'){
+   const g=new THREE.SphereGeometry(.135,40,26,.72,Math.PI*2-1.44),p=g.attributes.position;
+   // SphereGeometry's front is +Z. Remove a face window rather than covering the face with a picture.
+   for(let i=0;i<p.count;i++){const x=p.getX(i),z=p.getZ(i);p.setX(i,z);p.setZ(i,-x);}
+   g.computeVertexNormals();mesh(mount,g,mat,[0,.015,-.01],[1,1.27,1.02]);
+   mesh(mount,new THREE.SphereGeometry(.135,40,16,0,Math.PI*2,0,.8),mat,[0,.015,-.01],[1,1.27,1.02]);
+   const collar=mesh(mount,new THREE.TorusGeometry(.13,.027,12,48),mat,[0,-.155,0],[1.12,1,.72]);collar.rotation.x=Math.PI/2;
+   const cloth=collar.geometry.attributes.position;for(let i=0;i<cloth.count;i++)cloth.setZ(i,cloth.getZ(i)+Math.max(0,cloth.getY(i))*.4);collar.geometry.computeVertexNormals();
+   mesh(mount,new THREE.CylinderGeometry(.12,.17,.065,40,4,true),mat,[0,-.19,0],[1,1,.7]);
+   const scarf=new THREE.Shape();scarf.moveTo(-.14,-.15);scarf.quadraticCurveTo(-.05,-.20,-.06,-.26);scarf.quadraticCurveTo(.09,-.25,.14,-.15);scarf.quadraticCurveTo(0,-.20,-.14,-.15);
+   const clothFront=planarUV(new THREE.ExtrudeGeometry(scarf,{depth:.009,bevelEnabled:true,bevelSize:.004,bevelThickness:.003,bevelSegments:3,curveSegments:20}));for(let i=0;i<clothFront.attributes.uv.count;i++)clothFront.attributes.uv.setY(i,1-clothFront.attributes.uv.getY(i));mesh(mount,clothFront,mat,[0,0,.115]);
+  }else{
+   mesh(mount,new THREE.SphereGeometry(.119,40,24,0,Math.PI*2,0,1.42),mat,[0,.01,0],[.96,1.22,.92]);
+   for(const sign of [-1,1])oval(mount,.045,mat,[sign*.085,-.04,.028],[.55,1.5,1]);
+   mesh(mount,new THREE.CylinderGeometry(.11,.082,.09,40,4,true,-1.30,2.6),mat,[0,-.067,.005],[1,1,1]);
+   for(const sign of[-1,1])for(const y of[-.052,-.073,-.094])oval(mount,.0035,this.mats.dark,[sign*.038,y,.107],[1,1,.45]);
+   band(mount,.115,this.mats.gold,[0,.028,0],[.96,1,.92]);
+   if(id==='frost-helm')for(let i=-2;i<=2;i++)mesh(mount,new THREE.ConeGeometry(.019,.095,5),mat,[i*.039,.135+(.025*(2-Math.abs(i))),.04]);
+  }
+ }
+ equip(save){
+  const equipment={...save.equipment};if(ITEMS[equipment.weapon]?.hands===2)equipment.offhand=null;
+  const signature=Object.values(equipment).join(':');if(signature===this.signature)return;this.signature=signature;
+  // A slot replaces its old mesh. Nothing is stacked over a permanently dressed body.
+  const shared=new Set(Object.values(this.mats));for(const group of Object.values(this.equipment)){for(const attached of group.userData.attached||[])release(attached,shared);release(group,shared);}this.equipment={};
+  for(const [part,visible]of Object.entries({torso:!equipment.armor,arms:!equipment.armor,pants:!equipment.pants,boots:!equipment.boots})){
+   this.base[part].visible=visible;for(const attached of this.base[part].userData.attached||[])attached.visible=visible;
+  }
+  const palettes={helm:{'rogue-hood':0x314c31,'mage-hat':0x493261,'wolf-helm':0x9ca8b0,'frost-helm':0x74b9d7},armor:{'scale-mail':0x82909d,'frost-plate':0x70b8d5,'leather-vest':0x614632,'mage-robe':0x48315f,'inferno-robe':0x782b31},pants:{'iron-greaves':0x87949f,'rogue-pants':0x60452f,'mage-pants':0x443154},boots:{'plate-boots':0x9aa6af,'trail-boots':0x543b29,'mage-boots':0x41314f},cloak:{'red-cape':0x832c35,'forest-cloak':0x294b36,'astral-cloak':0x443363,'silk-cloak':0x282534}};
+  this.root.rotation.set(0,0,0);for(const [bone,position]of this.bindPositions){bone.rotation.set(0,0,0);bone.position.copy(position);}this.root.updateMatrixWorld(true);
+  for(const [slot,id]of Object.entries(equipment)){
+   if(!id)continue;const item=ITEMS[id];if(!item)continue;
+   if(slot==='weapon'||slot==='offhand'){
+    const object=makePixelEquipment(id,this.sprites,WEAPON_STYLES[id]?.length)||(item.shield?makeShield(id):makeWeapon(id)),arm=this.arms[slot==='weapon'?'right':'left'];arm.grip.add(object);object.userData.item=id;
+    if(item.shield){object.rotation.y=Math.PI;object.position.z=.065;}
+    this.equipment[slot]=object;continue;
+   }
+   const group=this.group(slot);group.userData.item=id;this.equipment[slot]=group;
+   const metal=id.includes('plate')||id.includes('greaves')||id.includes('helm')||id==='scale-mail',region=slot==='armor'?(metal?[.28,.1,.72,.76]:[.26,0,.74,item.look===3?.40:1]):slot==='pants'?[0,0,1,.32]:[0,0,1,1],mat=this.material(id,palettes[slot]?.[id]||0xb99a52,metal?'steel':slot==='pants'||slot==='boots'||id==='leather-vest'?'leather':'cloth',region);
+   if(slot==='armor'){this.torso(group,mat,.008);this.sleeves(group,mat,metal,id);this.belt(group,this.mats.glove);if(item.look===3)this.robe(group,this.material(id,palettes.armor[id],'cloth',[0,.4,1,1]));}
+   else if(slot==='pants'){this.trousers(group,mat,metal,id);this.belt(group,this.mats.glove);}
+   else if(slot==='boots'){mat.dispose();this.boots(group,surfaceMaterial(palettes.boots[id],metal?'steel':'leather'),id!=='mage-boots',id);}
+   else if(slot==='helm'){
+    if(id==='rogue-hood'||metal)mat.dispose();
+    this.headgear(group,id,id==='rogue-hood'?this.material(id,palettes.helm[id],'cloth',[.03,.68,.97,.98]):metal?surfaceMaterial(palettes.helm[id],'steel',{side:THREE.DoubleSide}):mat);
+   }
+   else if(slot==='cloak')this.cape(group,mat);
+   else if(slot==='neck'){
+    const mount=this.group('necklace',this.bones.chest);group.userData.attached=[mount];ribbon([[-.066,.19,.066],[-.045,.04,.125],[0,-.025,.13],[.045,.04,.125],[.066,.19,.066]],.0028,this.mats.gold,mount);oval(mount,.019,mat,[0,-.023,.141],[.7,1.3,.4]);
+   }else if(slot.startsWith('ring')){
+    const arm=this.arms[slot==='ring1'?'right':'left'],mount=this.group('ring',arm.grip);group.userData.attached=[mount];const ring=mesh(mount,new THREE.TorusGeometry(.012,.0025,6,20),mat,[arm.sign*.034,-.006,.024]);ring.rotation.x=Math.PI/2;
+   }
+  }
+  for(const [side,arm]of Object.entries(this.arms)){
+   const item=ITEMS[equipment[side==='right'?'weapon':ITEMS[equipment.weapon]?.hands===2?'weapon':'offhand']],profile={radiusX:item?.shield?.011:item?.magic?.018:.014,radiusZ:item?.shield?.011:item?.magic?.018:.012,round:!!item?.shield};
+   if(JSON.stringify(profile)!==arm.profile){arm.hand.geometry.dispose();arm.hand.geometry=sculptedHand(side,profile);arm.profile=JSON.stringify(profile);}
+  }
+ }
+ pose({time=0,action='idle',angle=.08,reducedMotion=false}={}){
+  const t=reducedMotion?0:time/1000,breathe=Math.sin(t*2)*.009;
+  for(const [bone,position]of this.bindPositions){bone.rotation.set(0,0,0);bone.position.copy(position);}
+  this.root.rotation.y=angle;this.bones.spine.rotation.x=breathe;this.bones.chest.rotation.y=Math.sin(t*.9)*.018;this.bones.head.rotation.y=-Math.sin(t*.9)*.025;
+  for(const [side,arm]of Object.entries(this.arms)){const item=this.equipment[side==='right'?'weapon':'offhand']?.userData.item,angle=item==='inferno-axe'||item==='axe'?.25:.42;arm.shoulder.rotation.z=arm.sign*.16;arm.shoulder.rotation.x=-.07;arm.elbow.rotation.x=-.12;arm.grip.rotation.z=-arm.sign*angle;arm.grip.rotation.y=arm.sign*-.08;}
+  for(const leg of Object.values(this.legs)){leg.hip.rotation.z=leg.sign*.055;leg.ankle.rotation.y=leg.sign*.1;}
+  const progress=clamp(time/550,0,1),cycle=Math.sin(progress*progress*(3-2*progress)*Math.PI);
+  if(action==='slash'){this.arms.right.shoulder.rotation.x-=cycle*1.1;this.arms.right.shoulder.rotation.z+=cycle*.8;this.arms.right.elbow.rotation.x-=cycle*.85;this.bones.chest.rotation.y-=cycle*.28;}
+  if(action==='slash'&&this.equipment.offhand&&!ITEMS[this.equipment.offhand.userData.item]?.shield){this.arms.left.shoulder.rotation.x=-cycle*.8;this.arms.left.elbow.rotation.x=-.12-cycle*.65;}
+  if(action==='guard'){this.arms.left.shoulder.rotation.x=-.9;this.arms.left.elbow.rotation.x=-1.0;this.arms.left.grip.rotation.z=0;}
+  if(action==='cast'){this.arms.right.shoulder.rotation.x=-.65;this.arms.right.elbow.rotation.x=-.65;this.arms.left.shoulder.rotation.z=.65;}
+  if(action==='walk')for(const [side,leg]of Object.entries(this.legs)){const step=Math.sin(t*5)*leg.sign;leg.hip.rotation.x=step*.22;leg.knee.rotation.x=Math.max(0,-step)*.35;this.arms[side].shoulder.rotation.x=-step*.18;}
+  this.bones.capeMid.rotation.x=Math.sin(t*1.8)*.045;this.bones.capeHem.rotation.x=Math.sin(t*1.8-.7)*.065;
+  if(ITEMS[this.equipment.weapon?.userData.item]?.hands===2){
+   this.root.updateMatrixWorld(true);
+   const cutting=action==='slash'?cycle:0,wide=this.equipment.weapon.userData.item==='inferno-axe',position=new THREE.Vector3((wide?-.18:-.14)+cutting*.12,1.19+cutting*.10,.21),rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(.10+cutting*1.25,0,(wide?.34:.24)-cutting*.35));
+   const worldRotation=this.root.getWorldQuaternion(new THREE.Quaternion()).multiply(rotation);
+   for(const [side,arm]of Object.entries(this.arms)){
+    const local=position.clone().add(new THREE.Vector3(0,side==='right'?0:-.125,0).applyQuaternion(rotation)),palm=this.root.localToWorld(local);
+    const wrist=palm.clone().add(new THREE.Vector3(0,.055,-.014).applyQuaternion(worldRotation)),shoulder=arm.shoulder.getWorldPosition(new THREE.Vector3()),pole=this.root.localToWorld(new THREE.Vector3(arm.sign*.38,1.03,.15));
+    const solved=solveArm(shoulder,wrist,pole,{upper:.29,forearm:.255}),down=new THREE.Vector3(0,-1,0),upperQ=new THREE.Quaternion().setFromUnitVectors(down,solved.elbow.clone().sub(shoulder).normalize()),foreQ=new THREE.Quaternion().setFromUnitVectors(down,solved.wrist.clone().sub(solved.elbow).normalize());
+    arm.shoulder.quaternion.copy(arm.shoulder.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(upperQ));arm.elbow.quaternion.copy(upperQ.clone().invert().multiply(foreQ));arm.wrist.quaternion.copy(foreQ.clone().invert().multiply(worldRotation));arm.grip.rotation.set(0,0,0);this.root.updateMatrixWorld(true);
+   }
+  }
+  this.root.updateMatrixWorld(true);this.skeleton.update();
+ }
+ destroy(){this.skeleton.dispose();this.faceTexture?.dispose();for(const texture of this.textures.values())texture.dispose();release(this.root);}
+}
+
+export class RiggedEquipmentFigure {
+ constructor(sprites={},renderer=combatWebGLRenderer()){
+  this.renderer=renderer;this.model=new CharacterRig(sprites);this.scene=new THREE.Scene();this.scene.add(this.model.root);this.scene.environment=studioEnvironment;this.scene.environmentIntensity=.8;
+  this.scene.add(new THREE.HemisphereLight(0xdbe9ed,0x29241c,1.4));const key=new THREE.DirectionalLight(0xffe3bb,2.7);key.position.set(-2,3,4);this.scene.add(key);const rim=new THREE.DirectionalLight(0x91b9da,1.3);rim.position.set(2,2,-2);this.scene.add(rim);
+  this.camera=new THREE.OrthographicCamera(-.66,.66,1.1,-1.1,.1,10);this.camera.position.set(0,.98,4);this.camera.lookAt(0,.98,0);
+  this.canvas=document.createElement('canvas');this.canvas.width=480;this.canvas.height=800;this.context=this.canvas.getContext('2d');
+  const floor=mesh(this.scene,new THREE.CircleGeometry(.36,48),new THREE.MeshBasicMaterial({color:0x0d1413,transparent:true,opacity:.5}),[0,.007,0]);floor.rotation.x=-Math.PI/2;
+ }
+ sync(save,state={}){this.model.equip(save);this.model.pose(state);this.renderer.render(this.scene,this.camera);this.context.clearRect(0,0,480,800);this.context.drawImage(this.renderer.domElement,0,0,480,800);}
+ destroy(){this.model.destroy();release(this.scene);this.canvas.width=this.canvas.height=0;this.renderer.renderLists.dispose();}
+}

@@ -1,5 +1,5 @@
 import { Player3D } from './player-3d.mjs';
-import { EquipmentFigure } from './player-portrait.mjs';
+import { RiggedEquipmentFigure } from './equipment-rig.mjs';
 import { paintEnemyFrame } from './enemy-animation.mjs';
 
 function addTexture(scene,key,sheet,rect,runs){
@@ -25,14 +25,14 @@ export class FirstPersonPlayer {
   destroy(){if(this.destroyed)return;this.destroyed=true;this.model.destroy();this.root.destroy(true);this.scene.textures.remove(this.key);}
 }
 export class EquipmentPortrait {
-  constructor(scene,sprites,save){this.scene=scene;this.key=`portrait:${rigSerial++}`;this.texture=scene.textures.createCanvas(this.key,240,400);this.model=new EquipmentFigure(sprites);this.image=scene.add.image(120,200,this.key);this.sync(save);scene.events.once('shutdown',()=>{this.model.destroy();scene.textures.remove(this.key);});}
-  sync(save){
-    this.model.sync(save);const context=this.texture.context;context.clearRect(0,0,240,400);context.imageSmoothingEnabled=false;context.drawImage(this.model.canvas,0,0,240,400);this.texture.refresh();this.equipment={...save.equipment};
+  constructor(scene,sprites,save){this.scene=scene;this.key=`portrait:${rigSerial++}`;this.texture=scene.textures.createCanvas(this.key,240,400);this.model=new RiggedEquipmentFigure(sprites);this.image=scene.add.image(120,200,this.key);this.sync(save);scene.events.once('shutdown',()=>{this.model.destroy();scene.textures.remove(this.key);});}
+  sync(save,state={}){
+    this.model.sync(save,state);const context=this.texture.context;context.clearRect(0,0,240,400);context.imageSmoothingEnabled=true;context.drawImage(this.model.canvas,0,0,240,400);this.texture.refresh();this.equipment={...save.equipment};
   }
 }
 
 export function createPhaserRenderer({canvas,background,sprites,tick,getState,onRenderError}){
-  let activeScene,hero,previewGame=null,enemyImages=[],enemyKey='',dangerAura;
+  let activeScene,hero,previewGame=null,enemyImages=[],enemyKey='',dangerAura,previewAngle=.08,previewAction='idle',previewStarted=0;
   class CombatScene extends Phaser.Scene {
     constructor(){super('Combat');}
     create(){activeScene=this;this.textures.addCanvas('background',background);this.backdrop=this.add.image(0,0,'background').setOrigin(0).setDisplaySize(480,800);const world=this.add.container(0,0).setScale(2);try{hero=new FirstPersonPlayer(this,sprites);}catch(error){onRenderError?.(error);this.scene.pause();return;}world.add(hero.root);this.world=world;dangerAura=this.add.graphics();world.addAt(dangerAura,0);enemyImages=[this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false),this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false)];world.addAt(enemyImages[0],1);world.addAt(enemyImages[1],2);this.cameras.main.setBackgroundColor('#171522');}
@@ -57,9 +57,11 @@ export function createPhaserRenderer({canvas,background,sprites,tick,getState,on
       if(previewGame){previewGame.destroy(false);previewGame=null;}
       class PreviewScene extends Phaser.Scene {
         create(){this.hero=new EquipmentPortrait(this,sprites,save);}
+        update(now){if(!this.hero||document.hidden||now-(this.lastFrame||0)<33)return;this.lastFrame=now;const elapsed=performance.now()-previewStarted;if(previewAction==='slash'&&elapsed>650)previewAction='idle';this.hero.sync(save,{time:previewAction==='idle'?now:elapsed,action:previewAction,angle:previewAngle,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});}
       }
       previewGame=new Phaser.Game({type:Phaser.CANVAS,canvas,width:240,height:400,transparent:true,antialias:false,pixelArt:true,audio:{noAudio:true},scene:PreviewScene,banner:false});
     },
+    previewPose(action){if(action==='left'||action==='right')previewAngle=Math.max(-.7,Math.min(.7,previewAngle+(action==='left'?-.22:.22)));else{previewAction=action;previewStarted=performance.now();}},
     closePreview(){if(previewGame){previewGame.destroy(false);previewGame=null;}},
     inspect(){return {scene:activeScene,hero,enemyImages,dangerAura,preview:previewGame};}
   };

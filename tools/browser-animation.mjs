@@ -62,11 +62,14 @@ try{
  });
  assert.equal(report.length,78);await page.waitForTimeout(120);await page.locator('#first-person-gallery').screenshot({path:'artifacts/first-person-poses.png'});
  await page.evaluate(()=>{window.__gallery.destroy(true);window.__animationTest('renderer.inspect().hero.model.renderer.setSize(480,800)');});
- // Independent menu equipment uses the new complete figure art at its native proportions.
+ // Inventory renders weighted full-body geometry on a shared skeleton.
  for(const [armor,weapon]of [['scale-mail','rust-sword'],['leather-vest','venom-dagger'],['mage-robe','ember-staff']]){
   await page.evaluate(({armor,weapon})=>window.__animationTest(`equip(save,'armor','${armor}');equip(save,'weapon','${weapon}');tab='gear';openPanel();`),{armor,weapon});
   await page.waitForFunction(()=>window.__animationTest('renderer.inspect().preview?.scene.scenes[0]?.hero?.equipment'));
   assert.equal(await page.evaluate(()=>window.__animationTest('renderer.inspect().preview instanceof Phaser.Game')),true);
+  assert.equal(await page.evaluate(()=>window.__animationTest('renderer.inspect().preview.scene.scenes[0].hero.model.model.skeleton.bones.length')),22);
+  await page.getByRole('button',{name:'หมุนตัวละครขวา',exact:true}).click();
+  await page.getByRole('button',{name:'ลองฟัน',exact:true}).click();
   await page.locator('#heroPreview').screenshot({path:`artifacts/portrait-${armor}.png`});
  }
  await page.evaluate(()=>window.__animationTest(`renderer.closePreview();$('panel').hidden=true;equip(save,'armor','scale-mail');equip(save,'weapon','rust-sword');equip(save,'offhand','wood-shield');enter(1);`));
