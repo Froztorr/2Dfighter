@@ -1,18 +1,19 @@
 import { ENEMY_ATLAS } from './enemy-atlas.mjs';
 import { enemyFrame, enemyArtPose } from './enemy-animation.mjs';
 import { playerAssets } from './fps-player.mjs';
+import { PORTRAIT_FILES, itemIconData } from './equipment-art.mjs';
 import { createPhaserRenderer } from './phaser-renderer.mjs';
 import { STAFF_RUNES, strikeContacts, HERO_ACTIONS, impactParticles, ITEMS, FLOORS, QUESTS, dayKey, daily, progress, grant, claimQuest, forgeScore, finishMini, SLOTS, equip, stars, guardReduction, DIR, ATTACKS, blockHit, regenStamina, defend, recognize, newSave, loadSave, stats, buy } from './core.mjs';
 const $ = id => document.getElementById(id);
 const canvas = $('scene'), background=document.createElement('canvas'), ctx = background.getContext('2d');
 background.width=480;background.height=800;
 canvas.width = 480; canvas.height = 800;
-const BASE_SPRITES=['brute','lizard','wraith','knight','gear','guards','frost','spider','demon','relics','portrait'];
+const BASE_SPRITES=['brute','lizard','wraith','knight','gear','guards','frost','spider','demon','relics',...Object.keys(PORTRAIT_FILES)];
 const sprites={};let spritesLoaded=0,renderFailure=false;
 function loadSprite(name){
   if(sprites[name])return sprites[name];const image=new Image();sprites[name]=image;
-  image.onload=()=>{spritesLoaded++;if(spritesLoaded===Object.keys(sprites).length&&!renderFailure){$('start').disabled=false;$('assetStatus').textContent='';if(phase==='home')renderHome();}};
-  image.onerror=()=>{$('assetStatus').textContent='โหลดภาพไม่สำเร็จ กรุณารีเฟรช';};image.src=`./assets/${name}${ENEMY_ATLAS[name]?'-v2':''}.png`;return image;
+  image.onload=()=>{spritesLoaded++;if(spritesLoaded===Object.keys(sprites).length&&!renderFailure){$('start').disabled=false;$('assetStatus').textContent='';if(phase==='home')renderHome();if(!$('panel').hidden)renderPanel();}};
+  image.onerror=()=>{$('assetStatus').textContent='โหลดภาพไม่สำเร็จ กรุณารีเฟรช';};image.src=PORTRAIT_FILES[name]||`./assets/${name}${ENEMY_ATLAS[name]?'-v2':''}.png`;return image;
 }
 function ensurePlayerArt(){for(const name of playerAssets(save))loadSprite(name);}
 for(const name of BASE_SPRITES)loadSprite(name);
@@ -156,7 +157,7 @@ function setBlocking(value) {
 }
 function releaseGuard() { guardPointer=null;guardKey=false;setBlocking(false); }
 function openPanel() { if(phase==='dead'&&time<deathPanelAt)return;paused = true; releaseGuard(); pointer=null; trail=[]; $('panel').hidden=false; renderPanel(); }
-function itemIcon(id){const i=ITEMS[id],cols=i?.atlas?4:6,rows=i?.atlas?3:6;return i?`<span class="gearIcon ${i.atlas?'relicIcon':''}" style="background-position:${i.icon%cols*100/(cols-1)}% ${Math.floor(i.icon/cols)*100/(rows-1)}%"></span>`:'<span class="emptySlot">＋</span>';}
+function itemIcon(id){const url=ITEMS[id]&&itemIconData(sprites,id);return url?`<img class="gearIcon canonicalIcon" alt="" src="${url}">`:'<span class="emptySlot">＋</span>';}
 function itemStats(i){return [i.attack?`ATK +${i.attack}`:'',i.armor?`DEF +${i.armor}`:'',i.health?`HP +${i.health}`:'',i.hands===2?'2 HANDS':i.shield?'BLOCK':''].filter(Boolean).join(' · ');}
 function rewardText(r){return `+${r.gold} GOLD · +${r.xp||0} EXP${r.potions?' · +'+r.potions+' POTION':''}`;}
 function questPanel(){

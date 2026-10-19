@@ -1,0 +1,15 @@
+# Modular inventory sources
+
+Five original RGBA images generated with the built-in ImageGen tool, copied unchanged from its saved outputs. No external stock imagery or additional editor installation. Source masks and canonical garment registration are authored in code; the PNGs contain no rendered mannequins except the separate base body.
+
+Prompt set:
+
+- `base.png`: one frontal athletic male adventurer in fitted neutral charcoal underclothes, cloth footwraps and leather gloves; short brown hair; relaxed separated arms, closed hands at upper thighs; upper-left light, crisp detailed 16-bit dark medieval pixel clusters, no skirt, armor, straps, cloak, weapons, shadow or text. Portrait 2:3 transparent canvas, complete anatomy. Output `exec-5066c2ea-c288-4c08-a70d-9836aba068d4.png`.
+- `plate.png`: use the base as an invisible pose mannequin; only a hollow steel breastplate, pauldrons, articulated sleeves and short fauld, with leather gussets and subtle gold rivets. No human, gloves, pants or boots; transparent neck and cuffs. Matching lighting and pixel density. Output `exec-986daf7e-ca1f-4577-b4d1-d1d2cec866aa.png`.
+- `parts.png`: 4×4 isolated wearable parts in the base/plate style. Row 0 steel helmet, forest-green hood with cowl, violet wizard hat, ice-crown helmet. Row 1 steel trousers, brown leather trousers, violet trousers, crimson cape. Row 2 steel boots, leather boots, violet boots, green cape. Row 3 astral cape, spider-silk cape, leather chest/sleeves, violet robe. No people, labels or backgrounds. Output `exec-af3cd7e3-965e-4f50-b1b7-1e0065d68adb.png`.
+- `held.png`: 4×5 complete upright weapons/shields, no hands; canonical order in `equipment-art.mjs`. Rust/iron swords, mace, axe; greatsword, ember staff, wood/steel shields; dagger, venom dagger, fire wand, ice staff; sun shield, assassin dagger, ice sword/shield; spider fang/hook, lava axe, demon staff. Same pixel treatment and light. Output `exec-ee082a44-cddc-4fc4-a548-54f2405d3f2b.png`.
+- `robe-top.png`: edit the plate source to violet embroidered wizard cloth, preserving its silhouette, neck, shoulder, sleeve and wrist registration. No human or long skirt. It combines with the separate skirt section of the robe garment, never a slice of a different character. Output `exec-29628899-2cc7-4222-aa10-002e94b83b0e.png`.
+
+`tools/measure-paperdoll.py` measures connected equipment components and emits pixel ownership runs in `paperdoll-atlas.mjs`. Runtime alpha threshold 200 removes low-alpha generation halos. Ice metal and ember cloth palettes apply equally to the worn layers and their icons. Existing accessory artwork remains the canonical source for rings/amulets.
+
+`player-portrait.mjs` places the cape back first, the single body and garments next, and the cape collar/front panels afterward. The front opening includes a notch for hanging clasps. The hood has its own back and face opening. Base underclothes are hidden beneath equipped armor; source gloves cover weapon shafts. Two-handed equipment suppresses the offhand. No body-profile warping, full-character strip assembly, or generated human pieces are used.

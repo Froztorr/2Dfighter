@@ -23,7 +23,7 @@ export function playerFrame(action='idle',dir='right',elapsed=0){
 }
 export function equipmentArt(save){
   const weapon=ITEMS[save.equipment.weapon],armor=ITEMS[save.equipment.armor];
-  return {look:armor?.look||0,dualWielded:weapon?.hands!==2&&!!ITEMS[save.equipment.offhand]&&!ITEMS[save.equipment.offhand].shield,twoHanded:weapon?.hands===2,weapon:save.equipment.weapon,offhand:weapon?.hands===2?null:save.equipment.offhand,armorHue:armor?.hue||0};
+  return {look:armor?.look||0,armor:save.equipment.armor,dualWielded:weapon?.hands!==2&&!!ITEMS[save.equipment.offhand]&&!ITEMS[save.equipment.offhand].shield,twoHanded:weapon?.hands===2,weapon:save.equipment.weapon,offhand:weapon?.hands===2?null:save.equipment.offhand,armorHue:armor?.hue||0};
 }
 export const ITEM_GRIPS={
   'rust-sword':[.28,.76],'iron-sword':[.30,.77],mace:[.27,.79],axe:[.30,.77],greatsword:[.25,.78],

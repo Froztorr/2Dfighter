@@ -6,6 +6,7 @@ const fps=await import('./fps-player.mjs');
 const enemies=await import('./enemy-animation.mjs');
 const atlas=await import('./enemy-atlas.mjs');
 const core = await import('./core.mjs').catch(() => ({}));
+const equipmentSprites=await import('./equipment-art.mjs');
 
 test('combat fills the viewport and shoulders continue beyond the bottom edge',async()=>{
  const {combatCamera}=await import('./player-3d.mjs');
@@ -15,21 +16,45 @@ test('combat fills the viewport and shoulders continue beyond the bottom edge',a
   for(const side of ['left','right'])assert.ok(pose[side].shoulder.clone().project(camera).y < -1,'arm roots must exit the screen rather than end inside it');
  }
 });
+test('combat material variants preserve leather gloves and match ice/ember clothing',async()=>{
+ const {Player3D}=await import('./player-3d.mjs'),model=new Player3D({render(){},renderLists:{dispose(){}}}),save=core.newSave();
+ try{
+  save.equipment.armor='frost-plate';model.sync({save});assert.ok(model.mats.plate.color.b>model.mats.plate.color.r,'ice metal must remain blue');
+  assert.ok(model.mats.glove.color.r>model.mats.glove.color.g,'ice armor must not recolor leather gloves');
+  save.equipment.armor='inferno-robe';model.sync({save});assert.ok(model.mats.sleeve.color.r>model.mats.sleeve.color.b,'ember cloth must remain red');
+  assert.ok(model.mats.glove.color.r>model.mats.glove.color.g,'ember cloth must not recolor leather gloves');
+ }finally{model.destroy();}
+});
 
-test('portrait physically attaches equipment and removes the offhand for two-handed weapons',async()=>{
- const {Portrait3D}=await import('./player-portrait.mjs');const {Vector3}=await import('./vendor/three.module.js');
- const save=core.newSave(),portrait=new Portrait3D({render(){},renderLists:{dispose(){}}});
- for(const outfit of [
-  {helm:'wolf-helm',armor:'leather-vest',pants:'mage-pants',boots:'plate-boots',weapon:'iron-sword',offhand:'wood-shield'},
-  {helm:'mage-hat',armor:'inferno-robe',pants:'iron-greaves',boots:'trail-boots',weapon:'demon-staff',offhand:null},
-  {helm:'rogue-hood',armor:'frost-plate',weapon:'venom-dagger',offhand:'assassin-dagger'}
- ]){
-  Object.assign(save.equipment,outfit);portrait.sync(save);
-  assert.equal(portrait.weapon.userData.item,save.equipment.weapon);
-  assert.equal(portrait.leftGrip.children.length,core.ITEMS[save.equipment.weapon].hands===2?0:1);
-  assert.ok(portrait.weapon.getWorldPosition(new Vector3()).distanceTo(portrait.rightGrip.getWorldPosition(new Vector3()))<1e-6);
+test('paperdoll places the body inside the cloak and leaves the front opening clear',async()=>{
+ const {portraitLayers}=await import('./player-portrait.mjs');const save=core.newSave();save.equipment.cloak='forest-cloak';save.equipment.armor='scale-mail';
+ const layers=portraitLayers(save),index=part=>layers.findIndex(layer=>layer.part===part);
+ assert.ok(index('cloak-back')<index('body'));assert.ok(index('body')<index('armor'));assert.ok(index('armor')<index('cloak-front'));
+ const front=layers[index('cloak-front')];assert.ok(front.hole.length>=4,'a front cape must contain an open window, not an opaque picture');
+ const inside=(x,y)=>front.hole.reduce((odd,[ax,ay],i,points)=>{const [bx,by]=points[(i+1)%points.length];return ((ay>y)!==(by>y)&&x<(bx-ax)*(y-ay)/(by-ay)+ax)?!odd:odd;},false);
+ assert.ok(inside(.5,.5),'the torso opening must remain clear');assert.ok(!inside(.5,.2),'the hanging clasp must not be sliced in half');
+ save.equipment.cloak=null;assert.ok(portraitLayers(save).every(layer=>!layer.part.startsWith('cloak-')));
+});
+test('every item has canonical artwork, and two-hand equipment cannot leave an offhand visible',async()=>{
+ const {itemArt}=await import('./equipment-art.mjs'),{portraitLayers}=await import('./player-portrait.mjs');
+ for(const [id,item]of Object.entries(core.ITEMS)){
+  const art=itemArt(id);assert.ok(art?.sheet&&art.crop.length===4,id);assert.ok(art.crop[2]>0&&art.crop[3]>0,id);
+  const save=core.newSave();save.equipment[item.slot==='ring'?'ring1':item.slot]=id;
+  const layers=portraitLayers(save);assert.ok(layers.some(layer=>layer.id===id),id+' has no worn representation');
+  for(const layer of layers)assert.ok(layer.rect?.length===4&&layer.rect.every(Number.isFinite)&&layer.rect[2]>0&&layer.rect[3]>0,id+' has an unregistered garment');
  }
- portrait.destroy();
+ const save=core.newSave();save.equipment.weapon='greatsword';save.equipment.offhand='steel-shield';assert.ok(portraitLayers(save).every(layer=>layer.part!=='offhand'));
+});
+test('paperdoll source masks retain separate equipment without neighboring fragments',async()=>{
+ const {PAPERDOLL_ATLAS}=await import('./paperdoll-atlas.mjs');
+ for(const meta of Object.values(PAPERDOLL_ATLAS)){
+  const owners=new Uint8Array(meta.width*meta.height);
+  for(const {crop:[sx,sy,sw,sh],runs}of meta.frames){
+   assert.ok(sx>=0&&sy>=0&&sx+sw<=meta.width&&sy+sh<=meta.height);let area=0;
+   for(const [x,y,width]of runs){assert.ok(x>=0&&y>=0&&x+width<=sw&&y<sh);for(let offset=0;offset<width;offset++){const pixel=(sy+y)*meta.width+sx+x+offset;assert.equal(owners[pixel],0);owners[pixel]=1;area++;}}
+   assert.ok(area>200);
+  }
+ }
 });
 
 test('impact particles follow the hit direction',()=>{assert.ok(core.impactParticles('up',10).every(p=>p.vy<0));assert.ok(core.impactParticles('right',10).every(p=>p.vx>0));});
@@ -176,7 +201,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   const imageCalls=[];
   const drawing=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
   const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{setProperty(){}},dataset:{},hidden:true,setAttribute(){},classList:{toggle(){}},addEventListener(type,fn){events.set(id+':'+type,fn);},getContext:()=>drawing,querySelector:()=>node('heading'),getBoundingClientRect:()=>({left:0,top:0,width:240,height:400}),setPointerCapture(){}});return nodes.get(id);};
-  const context=vm.createContext({...core,...fps,...enemies,...atlas,createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){const meta=atlas.ENEMY_ATLAS[path.split('/').at(-1).replace(/(?:-v2)?\.png$/,'')];if(meta){this.naturalWidth=meta.width;this.naturalHeight=meta.height;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
+  const context=vm.createContext({...core,...fps,...enemies,...atlas,...equipmentSprites,itemIconData:()=>"",createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){const meta=atlas.ENEMY_ATLAS[path.split('/').at(-1).replace(/(?:-v2)?\.png$/,'')];if(meta){this.naturalWidth=meta.width;this.naturalHeight=meta.height;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
   const source=(await readFile(new URL('./app.js',import.meta.url),'utf8')).replace(/^import[^\n]+\n/gm,'');
   vm.runInContext(source,context);
   const run=s=>vm.runInContext(s,context);
