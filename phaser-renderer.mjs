@@ -1,5 +1,5 @@
 import { Player3D } from './player-3d.mjs';
-import { Portrait3D } from './player-portrait.mjs';
+import { EquipmentFigure } from './player-portrait.mjs';
 import { paintEnemyFrame } from './enemy-animation.mjs';
 
 function addTexture(scene,key,sheet,rect,runs){
@@ -25,9 +25,9 @@ export class FirstPersonPlayer {
   destroy(){if(this.destroyed)return;this.destroyed=true;this.model.destroy();this.root.destroy(true);this.scene.textures.remove(this.key);}
 }
 export class EquipmentPortrait {
-  constructor(scene,sprites,save){this.scene=scene;this.key=`portrait-3d:${rigSerial++}`;this.texture=scene.textures.createCanvas(this.key,240,400);this.model=new Portrait3D(undefined,sprites);this.image=scene.add.image(120,200,this.key);this.sync(save);scene.events.once('shutdown',()=>{this.model.destroy();scene.textures.remove(this.key);});}
+  constructor(scene,sprites,save){this.scene=scene;this.key=`portrait:${rigSerial++}`;this.texture=scene.textures.createCanvas(this.key,240,400);this.model=new EquipmentFigure(sprites);this.image=scene.add.image(120,200,this.key);this.sync(save);scene.events.once('shutdown',()=>{this.model.destroy();scene.textures.remove(this.key);});}
   sync(save){
-    this.model.sync(save);const context=this.texture.context;context.clearRect(0,0,240,400);context.drawImage(this.model.renderer.domElement,0,0,240,400);this.texture.refresh();this.equipment={...save.equipment};
+    this.model.sync(save);const context=this.texture.context;context.clearRect(0,0,240,400);context.imageSmoothingEnabled=false;context.drawImage(this.model.canvas,0,0,240,400);this.texture.refresh();this.equipment={...save.equipment};
   }
 }
 

@@ -141,7 +141,7 @@ export class Player3D {
   this.magic=mesh(this.scene,new THREE.TorusGeometry(.07,.003,5,32),new THREE.MeshBasicMaterial({color:0xbaa1ff,transparent:true,opacity:.75}));this.magic.visible=false;
  }
  equipment(art){
-  const signature=[art.weapon,art.offhand,art.look,art.armorHue].join(':');if(signature===this.signature)return;this.signature=signature;
+  const signature=[art.weapon,art.offhand,art.look,art.armor].join(':');if(signature===this.signature)return;this.signature=signature;
   for(const object of[this.weapon,this.offhand])if(object)disposeGroup(object);
   this.weapon=makePixelEquipment(art.weapon,this.sprites,WEAPON_STYLES[art.weapon]?.length)||makeWeapon(art.weapon);this.weapon.position.copy(RIGHT_WRIST).multiplyScalar(-1);this.right.wrist.add(this.weapon);
   this.offhand=art.offhand?(makePixelEquipment(art.offhand,this.sprites,WEAPON_STYLES[art.offhand]?.length)||(ITEMS[art.offhand]?.shield?makeShield(art.offhand):makeWeapon(art.offhand))):new THREE.Group();this.offhand.position.copy(LEFT_WRIST).multiplyScalar(-1);
@@ -150,8 +150,8 @@ export class Player3D {
    const profile=object.userData.gripProfile||{radiusX:.014,radiusZ:.012},key=JSON.stringify(profile);
    if(arm.hand.userData.profile!==key){const mesh=arm.hand.userData.gripMesh;mesh.geometry.dispose();mesh.geometry=sculptedHand(arm.hand.userData.side,profile);arm.hand.userData.profile=key;arm.hand.userData.gripProfile=profile;}
   }
-  const palette=[[0x7b7164,0x60432d,0x967c61],[0x333a42,0x493b30,0xa4afba],[0x3e4537,0x493526,0x8c7655],[0x3a304c,0x413349,0xa594c3]][art.look];
-  ['sleeve','glove','plate'].forEach((name,i)=>{this.mats[name].color.setHex(palette[i]);if(art.armorHue)this.mats[name].color.offsetHSL(art.armorHue/360,0,0);changeSurface(this.mats[name],name==='plate'?'steel':name==='glove'?'leather':art.look===2?'leather':'cloth');this.mats[name].metalness=art.look===1&&name==='plate'?.82:0;});
+  const palette=art.armor==='frost-plate'?[0x233b4b,0x493b30,0x7faec9]:art.armor==='inferno-robe'?[0x6b222b,0x493526,0x93694e]:[[0x7b7164,0x60432d,0x967c61],[0x333a42,0x493b30,0xa4afba],[0x3e4537,0x493526,0x8c7655],[0x3a304c,0x413349,0xa594c3]][art.look];
+  ['sleeve','glove','plate'].forEach((name,i)=>{this.mats[name].color.setHex(palette[i]);changeSurface(this.mats[name],name==='plate'?'steel':name==='glove'?'leather':art.look===2?'leather':'cloth');this.mats[name].metalness=art.look===1&&name==='plate'?.82:0;});
   this.scene.traverse(o=>{if(o.userData.armorDetail)o.visible=art.look===1;});
   for(const arm of[this.right,this.left])for(const plate of arm.plates)plate.visible=art.look===1;
  }

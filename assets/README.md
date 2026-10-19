@@ -1,5 +1,7 @@
 # Current frontal enemy atlases (2026-10-18)
 
+Current inventory/equipment sources and composition are documented in [paperdoll/README.md](paperdoll/README.md). Older portrait descriptions below are historical.
+
 `brute-v2.png`, `lizard-v2.png`, `wraith-v2.png`, `knight-v2.png`, `frost-v2.png`, `spider-v2.png`, and `demon-v2.png` replace the older six-column atlases below. Seven original RGBA ImageGen images, eight columns by five rows, 40 poses per enemy (280 total). Faces and chests remain directed toward the player. Row zero contains three idle poses, guard, two hurt poses, kneeling death and fallen death. Rows one through four contain ready, two anticipation poses, travel, contact, follow-through, recovery and ready for up/down/left/right attacks.
 
 The generation brief requires a frontal camera, consistent anatomy/costume/scale, separate complete figures, transparent alpha and readable directional weapon paths. Frontal correction passes were applied to lizard, wraith, knight, frost, spider and demon; the demon idle row received a final eight-column layout repair. Built-in ImageGen originals are copied unchanged. Earlier sheets are preserved as historical sources.

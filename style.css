@@ -42,3 +42,4 @@
 
 #attackArrow[hidden]{display:none}
 .telegraph[data-directional="false"] .attackBadge{border-color:#ff4057}
+.gearIcon.canonicalIcon{object-fit:contain;background:none;image-rendering:pixelated}

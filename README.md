@@ -81,7 +81,7 @@
 
 Seven front-facing enemies use original `*-v2.png` dark-fantasy atlases with 40 poses each: three idle poses, guard, two hurt poses, two death poses, and eight poses per directional attack. Source-pixel ownership separates neighboring figures and retains detached weapon tips; each pose aligns to its measured foot anchor. The contact pose begins when damage resolves. Original atlases remain archived.
 
-Player arms render across the full viewport. Camera framing and lowered rest grips preserve the full arm length and connect both forearms to the bottom edge. Inventory outfits register to common neck, belt, knee and ankle landmarks; continuous robes, garment masks and hand occlusion keep mixed equipment coherent. Held weapons use the same solid geometry and physical grips as combat.
+Player arms render across the full viewport. Camera framing and lowered rest grips preserve the full arm length and connect both forearms to the bottom edge. Inventory now uses one base body and separate wearable garments, with explicit back/body/front cloak layers, a hood face opening, garment occlusion and hand-over-shaft ordering. Icons and worn items use canonical artwork; the 20 held items also supply combat geometry. See [the modular inventory report](docs/modular-inventory.md).
 
 Skull attacks require a matching directional dodge within 450 ms (170 ms for perfect). Shields and magic wards cannot stop skull attacks; shield-icon heavy attacks remain block-only.
 

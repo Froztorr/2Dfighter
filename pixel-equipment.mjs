@@ -1,14 +1,6 @@
 import * as THREE from './vendor/three.module.js';
 import { ITEMS } from './core.mjs';
-import { ITEM_GRIPS } from './fps-player.mjs';
-
-// Tip landmarks align the original diagonal inventory drawings with the rig's +Y grip axis.
-const TIPS={
- 'rust-sword':[.83,.06],'iron-sword':[.85,.06],mace:[.59,.24],axe:[.58,.23],greatsword:[.91,.03],
- 'ember-staff':[.65,.20],'parry-dagger':[.85,.08],'venom-dagger':[.77,.13],'fire-wand':[.67,.23],
- 'ice-staff':[.66,.20],'frost-sword':[.91,.05],'spider-fang':[.82,.06],
- 'spider-claw':[.19,.04],'assassin-dagger':[.25,.87],'inferno-axe':[.64,.24],'demon-staff':[.49,.20]
-};
+import { itemArt, artCanvas } from './equipment-art.mjs';
 const cache=new Map();
 
 // Solid front/back faces and boundary walls, rather than a transparent billboard.
@@ -97,16 +89,17 @@ export function solidPixelMask(rgba,width,height){
  const result=new Uint8Array(rgba.length);for(const i of largest)result.set(rgba.subarray(i*4,i*4+4),i*4);return result;
 }
 function sourceAsset(id,sprites,length){
- const item=ITEMS[id],sheet=sprites?.[item?.atlas||'gear'];if(!sheet?.complete||!sheet.naturalWidth)return null;
+ const item=ITEMS[id],art=itemArt(id),sheet=sprites?.[art?.sheet];if(!sheet?.complete||!sheet.naturalWidth)return null;
  if(cache.has(id))return cache.get(id);
- const cols=item.atlas?4:6,rows=item.atlas?3:6,cw=sheet.naturalWidth/cols,ch=sheet.naturalHeight/rows;
- const canvas=document.createElement('canvas');canvas.width=Math.round(cw);canvas.height=Math.round(ch);
+ const source=artCanvas(sprites,id),side=Math.max(source.width,source.height),padding=[(side-source.width)/2,(side-source.height)/2];
+ const canvas=document.createElement('canvas');canvas.width=canvas.height=side;
  const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.imageSmoothingEnabled=false;
- ctx.drawImage(sheet,item.icon%cols*cw,Math.floor(item.icon/cols)*ch,cw,ch,0,0,canvas.width,canvas.height);
+ ctx.drawImage(source,...padding);
  const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.magFilter=THREE.NearestFilter;texture.minFilter=THREE.NearestFilter;texture.generateMipmaps=false;
  // Native fine pixels remain in the texture. A 128-cell outline keeps the mesh light.
  const mask=document.createElement('canvas');mask.width=mask.height=128;const mc=mask.getContext('2d',{willReadFrequently:true});mc.imageSmoothingEnabled=false;mc.drawImage(canvas,0,0,128,128);
- const geometries=extrudePixels(solidPixelMask(mc.getImageData(0,0,128,128).data,128,128),128,128,{grip:item.shield?[.5,.5]:ITEM_GRIPS[id],tip:TIPS[id],length:item.shield?.36:length,depth:item.shield?.025:item.magic?.035:.024,shield:!!item.shield});
+ const registered=point=>[(padding[0]+point[0]*source.width)/side,(padding[1]+point[1]*source.height)/side];
+ const geometries=extrudePixels(solidPixelMask(mc.getImageData(0,0,128,128).data,128,128),128,128,{grip:registered(art.grip),tip:registered(art.tip),length:item.shield?.36:length,depth:item.shield?.025:item.magic?.035:.024,shield:!!item.shield});
  // Keep the source hilt design while giving two-handed grips enough usable length.
  if(item.hands===2){
   let minimum=0;const positions=geometries.front.attributes.position;
@@ -116,7 +109,7 @@ function sourceAsset(id,sprites,length){
   }
  }
  if(!item.shield)fitEquipmentGrip(geometries,item.hands===2);
- const asset={texture,geometries,atlas:item.atlas||'gear',icon:item.icon};cache.set(id,asset);return asset;
+ const asset={texture,geometries,atlas:art.sheet,icon:art.frame};cache.set(id,asset);return asset;
 }
 export function makePixelEquipment(id,sprites,length){
  const asset=sourceAsset(id,sprites,length);if(!asset)return null;

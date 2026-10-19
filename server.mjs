@@ -1,10 +1,12 @@
 import { PLAYER_SHEETS } from './fps-player.mjs';
+import { PORTRAIT_FILES } from './equipment-art.mjs';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { resolve, extname } from 'node:path';
 const root=process.cwd();
 const publicFiles = new Set(['/index.html','/style.css','/app.js','/enemy-animation.mjs','/enemy-atlas.mjs','/core.mjs','/fps-player.mjs','/player-rig.mjs','/player-3d.mjs','/pixel-equipment.mjs','/player-sculpt.mjs','/player-materials.mjs','/vendor/three.module.js','/vendor/MarchingCubes.js','/vendor/RoomEnvironment.js','/vendor/three.core.js','/phaser-renderer.mjs','/vendor/phaser.min.js',...['hall','brute','lizard','wraith','knight','gear','guards','frost','spider','demon','relics','portrait',...PLAYER_SHEETS].map(name=>`/assets/${name}.png`)]);
 publicFiles.add('/player-portrait.mjs');
+for(const path of ['/equipment-art.mjs','/paperdoll-atlas.mjs',...Object.values(PORTRAIT_FILES).map(path=>'/'+path)])publicFiles.add(path);
 for(const name of ['brute','lizard','wraith','knight','frost','spider','demon'])publicFiles.add(`/assets/${name}-v2.png`);
 if(process.argv.includes('--studio')){publicFiles.add('/tools/art-review.html');publicFiles.add('/tools/art-review.mjs');}
 createServer(async(req,res)=>{
