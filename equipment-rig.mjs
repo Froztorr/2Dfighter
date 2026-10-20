@@ -28,6 +28,11 @@ function release(root,shared=new Set()){const geometry=new Set(),material=new Se
 function tube(profile,flatten=.72){return organicLimb(1,profile,flatten);}
 function planarUV(geometry){geometry.computeBoundingBox();const p=geometry.attributes.position,b=geometry.boundingBox,uv=[];for(let i=0;i<p.count;i++)uv.push((p.getX(i)-b.min.x)/(b.max.x-b.min.x),1-(p.getY(i)-b.min.y)/(b.max.y-b.min.y));geometry.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));return geometry;}
 function ribbon(points,radius,material,parent){const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));return mesh(parent,new THREE.TubeGeometry(curve,32,radius,6,false),material);}
+function placeArm(root,arm,palm,worldQ,pole){
+ const wrist=palm.clone().add(new THREE.Vector3(0,.055,-.014).applyQuaternion(worldQ)),shoulder=arm.shoulder.getWorldPosition(new THREE.Vector3());
+ const solved=solveArm(shoulder,wrist,pole,{upper:.29,forearm:.255}),down=new THREE.Vector3(0,-1,0),upperQ=new THREE.Quaternion().setFromUnitVectors(down,solved.elbow.clone().sub(shoulder).normalize()),foreQ=new THREE.Quaternion().setFromUnitVectors(down,solved.wrist.clone().sub(solved.elbow).normalize());
+ arm.shoulder.quaternion.copy(arm.shoulder.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(upperQ));arm.elbow.quaternion.copy(upperQ.clone().invert().multiply(foreQ));arm.wrist.quaternion.copy(foreQ.clone().invert().multiply(worldQ));arm.grip.rotation.set(0,0,0);root.updateMatrixWorld(true);
+}
 
 export class CharacterRig {
  constructor(sprites={}){
@@ -261,6 +266,8 @@ export class CharacterRig {
   for(const [bone,position]of this.bindPositions){bone.rotation.set(0,0,0);bone.position.copy(position);}
   const progress=clamp(time/550,0,1),cycle=Math.sin(progress*progress*(3-2*progress)*Math.PI),cut=action==='slash'?cycle:0,cast=action==='cast'?cycle:0;
   this.root.rotation.y=angle;this.bones.hips.position.add(new THREE.Vector3(...(stance.hips||[0,0,0])));this.bones.hips.position.y-=stance.lower;
+  this.bones.hips.rotation.set(...(stance.hipRotation||[0,0,0]));this.bones.spine.position.add(new THREE.Vector3(...(stance.torso||[0,0,0])));
+  this.bones.neck.rotation.set(...(stance.neckRotation||[0,0,0]));
   this.bones.spine.rotation.set(...(stance.body||[0,0,0]));this.bones.spine.rotation.x+=breathe+cut*.07;this.bones.chest.rotation.y=stance.twist*(mirrored?-1:1)+Math.sin(t*.9)*.012-cut*.28;
   this.bones.head.rotation.y=-stance.twist*.65+.10-Math.sin(t*.9)*.015;
   let right=new THREE.Vector3(...stance.right);const rotation=new THREE.Euler(...stance.rotation);
@@ -295,9 +302,7 @@ export class CharacterRig {
    arm.gesture.visible=family==='staff'&&side==='right';arm.hand.visible=!arm.gesture.visible;
    const local=side==='right'?right:left,q=side==='right'?rightQ:leftQ;
    const worldQ=this.root.getWorldQuaternion(new THREE.Quaternion()).multiply(q),palm=this.root.localToWorld(local.clone());
-   const wrist=palm.clone().add(new THREE.Vector3(0,.055,-.014).applyQuaternion(worldQ)),shoulder=arm.shoulder.getWorldPosition(new THREE.Vector3()),pole=this.root.localToWorld(new THREE.Vector3(...(stance[side+'Pole']||[arm.sign*.48,1.08,-.08])));
-   const solved=solveArm(shoulder,wrist,pole,{upper:.29,forearm:.255}),down=new THREE.Vector3(0,-1,0),upperQ=new THREE.Quaternion().setFromUnitVectors(down,solved.elbow.clone().sub(shoulder).normalize()),foreQ=new THREE.Quaternion().setFromUnitVectors(down,solved.wrist.clone().sub(solved.elbow).normalize());
-   arm.shoulder.quaternion.copy(arm.shoulder.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(upperQ));arm.elbow.quaternion.copy(upperQ.clone().invert().multiply(foreQ));arm.wrist.quaternion.copy(foreQ.clone().invert().multiply(worldQ));arm.grip.rotation.set(0,0,0);this.root.updateMatrixWorld(true);
+   placeArm(this.root,arm,palm,worldQ,this.root.localToWorld(new THREE.Vector3(...(stance[side+'Pole']||[arm.sign*.48,1.08,-.08]))));
   }
   // Plant the feet while the pelvis lowers into each weapon's stance.
   for(const [side,leg]of Object.entries(this.legs)){
@@ -306,10 +311,38 @@ export class CharacterRig {
    leg.hip.quaternion.copy(leg.hip.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(upperQ));leg.knee.quaternion.copy(upperQ.clone().invert().multiply(lowerQ));
    const footQ=this.root.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,leg.sign*.12,0)));leg.ankle.quaternion.copy(lowerQ.clone().invert().multiply(footQ));this.root.updateMatrixWorld(true);
   }
+  // Manual joint offsets follow IK; connected garments and props inherit them without stretching bones.
+  for(const side of ['right','left'])for(const joint of ['Shoulder','Elbow','Knee','Wrist']){
+   const value=stance[side+joint];if(value)this.bones[side+joint].quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...value)));
+  }
+  if(cut>0&&['greatsword','greataxe'].includes(family)&&Object.keys(stance).some(k=>/Shoulder|Elbow|Wrist/.test(k)&&stance[k].some(v=>v!==0))){
+   this.root.updateMatrixWorld(true);const a=this.arms.left,b=this.arms.right;
+   const palm=a.grip.getWorldPosition(new THREE.Vector3()).lerp(b.grip.localToWorld(new THREE.Vector3(0,family==='greatsword'?-.15:stance.spread,0)),cut);
+   const q=a.grip.getWorldQuaternion(new THREE.Quaternion()).slerp(b.grip.getWorldQuaternion(new THREE.Quaternion()),cut);
+   placeArm(this.root,a,palm,q,this.root.localToWorld(new THREE.Vector3(...(stance.leftPole||[.48,1.08,-.08]))));
+  }
   this.bones.capeMid.rotation.x=Math.sin(t*1.8)*.045;this.bones.capeHem.rotation.x=Math.sin(t*1.8-.7)*.065;
   this.root.updateMatrixWorld(true);this.skeleton.update();
  }
  destroy(){this.skeleton.dispose();this.faceTexture?.dispose();for(const texture of this.textures.values())texture.dispose();release(this.root);}
+}
+export function weaponTip(model,side){
+ const grip=model.arms[side].grip,object=['weapon','offhand'].map(slot=>model.equipment[slot]).find(o=>o?.parent===grip&&!ITEMS[o.userData.item]?.shield);
+ if(!object)return null;
+ // Measure in grip space so the control follows the real scaled staff or blade, at any pose.
+ const box=new THREE.Box3(),inverse=grip.matrixWorld.clone().invert();
+ object.traverse(o=>{if(!o.isMesh)return;o.geometry.computeBoundingBox();box.union(o.geometry.boundingBox.clone().applyMatrix4(inverse.clone().multiply(o.matrixWorld)));});
+ return grip.localToWorld(new THREE.Vector3(0,box.max.y,0));
+}
+export function aimWeapon(model,side,target,posture={}){
+ const tip=weaponTip(model,side);if(!tip)return {};
+ const wrist=model.arms[side].wrist,origin=wrist.getWorldPosition(new THREE.Vector3()),to=target.clone().sub(origin);
+ if(to.lengthSq()<1e-8)return {};
+ const delta=new THREE.Quaternion().setFromUnitVectors(tip.sub(origin).normalize(),to.normalize());
+ const desired=wrist.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(delta.multiply(wrist.getWorldQuaternion(new THREE.Quaternion())));
+ const key=side+'Wrist',offset=new THREE.Quaternion().setFromEuler(new THREE.Euler(...(posture[key]||[0,0,0]))),base=wrist.quaternion.clone().multiply(offset.invert());
+ const angles=new THREE.Euler().setFromQuaternion(base.invert().multiply(desired));
+ return {[key]:[angles.x,angles.y,angles.z]};
 }
 
 export class RiggedEquipmentFigure {
