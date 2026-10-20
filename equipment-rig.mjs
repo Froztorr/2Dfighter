@@ -3,7 +3,7 @@ import {ITEMS} from './core.mjs';
 import {organicLimb,sculptedHand} from './player-sculpt.mjs';
 import {solveArm} from './player-rig.mjs';
 import {makeWeapon,makeShield,combatWebGLRenderer,WEAPON_STYLES} from './player-3d.mjs';
-import {cleanPose} from './pose-settings.mjs';
+import {cleanPose,POSE_LIMITS} from './pose-settings.mjs';
 
 const clamp=THREE.MathUtils.clamp;
 // Palm targets are in body space; every garment follows the same solved skeleton.
@@ -20,6 +20,20 @@ export const STANCES={
 export function stanceFor(equipment){
  const weapon=ITEMS[equipment.weapon],offhand=ITEMS[equipment.offhand],a=WEAPON_STYLES[equipment.weapon]?.kind==='sword',b=WEAPON_STYLES[equipment.offhand]?.kind==='sword';
  return weapon?.magic?'staff':weapon?.hands===2?(equipment.weapon==='inferno-axe'?'greataxe':'greatsword'):offhand?.shield?'shield':offhand&&weapon?(a&&b?'swords':a||b?'mixed':'dual'):'single';
+}
+export function blendPostures(a,b,weight){
+ const result={...a},t=clamp(weight,0,1);
+ for(const key of Object.keys(POSE_LIMITS)){
+  if(b[key]===undefined)continue;
+  const end=b[key],start=a[key]??(Array.isArray(end)?[0,0,0]:0);
+  if(Array.isArray(end)){
+   if(/rotation|Rotation|body|Shoulder|Elbow|Knee|Wrist/.test(key)){
+    const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(...start)).slerp(new THREE.Quaternion().setFromEuler(new THREE.Euler(...end)),t),e=new THREE.Euler().setFromQuaternion(q);
+    result[key]=[e.x,e.y,e.z];
+   }else result[key]=end.map((v,i)=>start[i]+(v-start[i])*t);
+  }else result[key]=start+(end-start)*t;
+ }
+ return result;
 }
 function mesh(parent,geometry,material,position=[0,0,0],scale=[1,1,1]){const object=new THREE.Mesh(geometry,material);object.position.set(...position);object.scale.set(...scale);parent.add(object);return object;}
 function oval(parent,radius,material,position,scale){return mesh(parent,new THREE.SphereGeometry(radius,32,20),material,position,scale);}
@@ -262,9 +276,10 @@ export class CharacterRig {
  }
  pose({time=0,action='idle',angle=.55,reducedMotion=false,posture}={}){
   const t=reducedMotion?0:time/1000,breathe=Math.sin(t*2)*.006;
-  const family=stanceFor({weapon:this.equipment.weapon?.userData.item,offhand:this.equipment.offhand?.userData.item}),stance={...STANCES[family],...cleanPose(posture)},mirrored=family==='mixed'&&WEAPON_STYLES[this.equipment.offhand?.userData.item]?.kind==='sword';
+  const family=stanceFor({weapon:this.equipment.weapon?.userData.item,offhand:this.equipment.offhand?.userData.item}),ready={...STANCES[family],...cleanPose(posture)},mirrored=family==='mixed'&&WEAPON_STYLES[this.equipment.offhand?.userData.item]?.kind==='sword';
   for(const [bone,position]of this.bindPositions){bone.rotation.set(0,0,0);bone.position.copy(position);}
-  const progress=clamp(time/550,0,1),cycle=Math.sin(progress*progress*(3-2*progress)*Math.PI),cut=action==='slash'?cycle:0,cast=action==='cast'?cycle:0;
+  const progress=clamp(time/550,0,1),cycle=Math.sin(progress*progress*(3-2*progress)*Math.PI),custom=action==='slash'&&ready.attack;
+  const stance=custom?blendPostures(ready,ready.attack,cycle):ready,cut=action==='slash'&&!custom?cycle:0,cast=action==='cast'?cycle:0;
   this.root.rotation.y=angle;this.bones.hips.position.add(new THREE.Vector3(...(stance.hips||[0,0,0])));this.bones.hips.position.y-=stance.lower;
   this.bones.hips.rotation.set(...(stance.hipRotation||[0,0,0]));this.bones.spine.position.add(new THREE.Vector3(...(stance.torso||[0,0,0])));
   this.bones.neck.rotation.set(...(stance.neckRotation||[0,0,0]));

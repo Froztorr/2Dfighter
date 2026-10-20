@@ -6,3 +6,4 @@
 .dialDot{pointer-events:none;fill:#14212a;stroke-width:3}.coronalText{color:#eac275}.sagittalText{color:#78d4eb}
 .joint.tip{border-radius:4px;color:#fff0b2;border-color:#eac275}.joint.rotation{width:26px;height:26px;min-height:26px;background:#17252ed9;font-size:9px}
 [hidden]{display:none!important}
+.poseFrames button[aria-pressed=true]{border-color:#f0ce89;background:#4c432f;color:#ffe1a1}.poseFrames{margin-top:14px}#clearAttack{font-size:12px}
