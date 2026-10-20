@@ -55,12 +55,12 @@ export function createPhaserRenderer({canvas,background,sprites,tick,getState,on
       const current=enemyImages[1],scale=size*.78/rect.bodyHeight;current.setPosition(x+(mirror?rect.anchorX-rect.sx-rect.sw:rect.sx-rect.anchorX)*scale,y+size*aspect*.4-(rect.ground-rect.sy)*scale*aspect).setOrigin(0).setDisplaySize(rect.sw*scale,rect.sh*scale*aspect).setFlipX(mirror).setAlpha(alpha);current.setVisible(alpha>0);enemyImages[0].setVisible(false);
       if(alpha<1){current.setAlpha(alpha);enemyImages[0].setAlpha(0);}
     },
-    preview(canvas,save){
+    preview(canvas,save,appearance=false){
       if(previewGame){previewGame.destroy(false);previewGame=null;}
       let poses={};try{poses=readPoses(localStorage);}catch{}
       class PreviewScene extends Phaser.Scene {
         create(){this.hero=new EquipmentPortrait(this,sprites,save);}
-        update(now){if(!this.hero||document.hidden||now-(this.lastFrame||0)<33)return;this.lastFrame=now;const elapsed=performance.now()-previewStarted;if(previewAction==='slash'&&elapsed>650)previewAction='idle';this.hero.sync(save,{poses,time:previewAction==='idle'?now:elapsed,action:previewAction,angle:previewAngle,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});}
+        update(now){if(!this.hero||document.hidden||now-(this.lastFrame||0)<33)return;this.lastFrame=now;const elapsed=performance.now()-previewStarted;if(previewAction==='slash'&&elapsed>650)previewAction='idle';this.hero.sync(save,{appearance,poses,time:previewAction==='idle'?now:elapsed,action:previewAction,angle:previewAngle,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});}
       }
       previewGame=new Phaser.Game({type:Phaser.CANVAS,canvas,width:240,height:400,transparent:true,antialias:false,pixelArt:true,audio:{noAudio:true},scene:PreviewScene,banner:false});
     },

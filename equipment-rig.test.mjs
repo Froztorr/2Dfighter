@@ -5,6 +5,26 @@ import {ITEMS,newSave} from './core.mjs';
 import {CharacterRig,STANCES,stanceFor,weaponTip,aimWeapon,blendPostures} from './equipment-rig.mjs';
 import {cleanPose,readPoses,writePose,exportPoses} from './pose-settings.mjs';
 import {AUTHORED_POSES} from './authored-poses.mjs';
+import {APPEARANCE} from './appearance.mjs';
+
+test('appearance changes the shared head without changing gear and hats hide and restore hair',()=>{
+ const model=new CharacterRig(),save=newSave();
+ try{
+  model.equip(save);const weapon=model.equipment.weapon;
+  for(const face of Object.keys(APPEARANCE.face))for(const hair of Object.keys(APPEARANCE.hair)){
+   save.appearance={face,hair,skin:'deep',hairColor:'silver'};model.equip(save);model.pose({action:'slash',time:275});
+   assert.equal(model.equipment.weapon,weapon,'appearance must not rebuild equipment');
+   assert.equal(model.mats.skin.userData.tint,APPEARANCE.skin.deep.color);
+   assert.equal(model.mats.hair.userData.tint,APPEARANCE.hairColor.silver.color);
+   assert.equal(model.headVisual.parent,model.bones.head);
+   model.headVisual.traverse(o=>assert.ok(o.matrixWorld.elements.every(Number.isFinite)));
+  }
+  for(const helm of ['rogue-hood','mage-hat','wolf-helm','frost-helm']){
+   save.equipment.helm=helm;model.equip(save);assert.ok(model.hair.every(o=>!o.visible));
+  }
+  save.equipment.helm=null;model.equip(save);assert.ok(model.hair.length>0&&model.hair.every(o=>o.visible));
+ }finally{model.destroy();}
+});
 
 test('bundled user poses validate unchanged and preserve A/B endpoints and limb lengths',()=>{
  assert.deepEqual(Object.keys(AUTHORED_POSES).sort(),['dual','greatsword','mixed','shield','single','staff','swords']);

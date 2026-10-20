@@ -16,6 +16,7 @@ const $=id=>document.getElementById(id),presets={
 let storage;try{storage=localStorage;}catch{}
 const saved=readPoses(storage),drafts={},dirty=new Set(),figure=new RiggedEquipmentFigure(),save=newSave();
 let original;try{original=loadSave(storage?.getItem('emberblade-v1'));}catch{original=newSave();}
+save.appearance={...original.appearance};
 save.equipment={...save.equipment,helm:null,armor:'leather-vest',pants:'rogue-pants',boots:'trail-boots'};
 const canvas=$('figure'),context=canvas.getContext('2d');let family='greatsword',selected='right',frame='A',drag=null,animation=0,animationStart=0;
 const joints={right:['R','ข้อมือขวา'],left:['L','ข้อมือซ้าย'],rightFoot:['R','เท้าขวา'],leftFoot:['L','เท้าซ้าย'],hips:['H','สะโพก / Hip'],torso:['T','ลำตัว / Torso'],neckRotation:['N','คอ'],

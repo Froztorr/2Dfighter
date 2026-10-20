@@ -2,6 +2,22 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {equipmentScreen} from './equipment-ui.mjs';
 import {newSave,ITEMS,equip,loadSave,stats,strikeContacts} from './core.mjs';
+import {APPEARANCE,cleanAppearance} from './appearance.mjs';
+
+test('appearance persists independently of gear and old or invalid saves receive safe defaults',()=>{
+ const save=newSave(),gear=structuredClone(save.equipment);
+ save.appearance={face:'woman-angular',skin:'deep',hair:'braid',hairColor:'silver'};
+ const restored=loadSave(JSON.stringify(save));
+ assert.deepEqual(restored.appearance,save.appearance);assert.deepEqual(restored.equipment,gear);
+ assert.deepEqual(loadSave('{}').appearance,cleanAppearance());
+ assert.deepEqual(cleanAppearance({face:'<script>',skin:null,hair:[],hairColor:Infinity}),cleanAppearance());
+ const html=equipmentScreen(restored,'appearance','visual',()=>'<img>');
+ for(const [field,options]of Object.entries(APPEARANCE)){
+  assert.ok(html.includes(`data-appearance="${field}"`));
+  for(const id of Object.keys(options))assert.ok(html.includes(`value="${id}"`));
+ }
+ assert.ok(html.includes('id="heroPreview"'));
+});
 
 test('equipment opens on the character overview with all ten slots',()=>{
  const html=equipmentScreen(newSave(),null,'visual',()=>'<img>');

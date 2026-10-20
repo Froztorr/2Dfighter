@@ -1,4 +1,5 @@
 import { equipmentScreen } from './equipment-ui.mjs';
+import {APPEARANCE,cleanAppearance} from './appearance.mjs';
 import { ENEMY_ATLAS } from './enemy-atlas.mjs';
 import { enemyFrame, enemyArtPose } from './enemy-animation.mjs';
 import { playerAssets } from './fps-player.mjs';
@@ -213,7 +214,7 @@ function renderPanel() {
   if(tab==='quests')$('panelBody').innerHTML=questPanel();
   if(tab==='camp')$('panelBody').innerHTML=campPanel();
   if(gear){
-    renderer.preview($('heroPreview'),save);
+    renderer.preview($('heroPreview'),save,selectedSlot==='appearance');
   }else renderer.closePreview();
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); hud();
 }
@@ -233,6 +234,7 @@ function drinkPotion(){if(phase!=='combat'||paused||playerStunned>time||hp>=stat
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b)return;
   if(b.dataset.preview){renderer.previewPose(b.dataset.preview);return;}
+  if(b.hasAttribute('data-appearance-open')){selectedSlot='appearance';renderPanel();return;}
   if(b.id==='start'){homeView='map';selectedFloor=save.unlocked;renderHome();}
   if(b.dataset.home)goHome(b.dataset.home);
   if(b.dataset.selectFloor&&Number(b.dataset.selectFloor)<=save.unlocked){selectedFloor=Number(b.dataset.selectFloor);renderHome();}
@@ -254,6 +256,12 @@ document.addEventListener('click',e=>{
   if(b.dataset.buy && buy(save,b.dataset.buy)){persist();renderPanel();}
   if(b.dataset.upgrade){const k=b.dataset.upgrade,cost=80+save.upgrades[k]*50;if(save.upgrades[k]<10 && save.gold>=cost){save.gold-=cost;save.upgrades[k]++;if(k==='vigor')hp+=12;persist();renderPanel();}}
   if(b.id==='nextFloor'){selectedFloor=phase==='dead'?floor:Math.min(save.unlocked,floor+1);goHome('map');}
+});
+document.addEventListener('change',e=>{
+ const key=e.target.dataset.appearance;
+ if(!Object.hasOwn(APPEARANCE,key)||!Object.hasOwn(APPEARANCE[key],e.target.value))return;
+ save.appearance=cleanAppearance({...save.appearance,[key]:e.target.value});persist();
+ if($('appearanceStatus'))$('appearanceStatus').textContent='เลือก '+APPEARANCE[key][e.target.value].label+' แล้ว';
 });
 document.querySelectorAll('[data-dodge]').forEach(b=>{b.setAttribute('aria-label','Dodge '+b.dataset.dodge);b.addEventListener('pointerdown',e=>{e.preventDefault();evade(b.dataset.dodge);});});
 $('blockBtn').addEventListener('pointerdown',e=>{e.preventDefault();if(guardPointer!==null)return;guardPointer=e.pointerId;$('blockBtn').setPointerCapture(e.pointerId);setBlocking(true);});

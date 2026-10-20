@@ -4,17 +4,31 @@ import {enemyFrame,enemyArtPose,paintEnemyFrame} from '../enemy-animation.mjs';
 import {RiggedEquipmentFigure,rigItemIcon} from '../equipment-rig.mjs';
 import {PORTRAIT_FILES} from '../equipment-art.mjs';
 import {Player3D} from '../player-3d.mjs';
+import {APPEARANCE} from '../appearance.mjs';
 const $=id=>document.getElementById(id),save=newSave(),sprites={};
 $('action').parentElement.insertAdjacentHTML('afterend','<label>Turn (radians)<input id="angle" type="number" min="-0.7" max="0.7" step="0.1" value="0.55"></label>');
 $('outfitGallery').previousElementSibling.textContent='One skeleton · interchangeable meshes · mixed builds';
 $('dollCheck').previousElementSibling.textContent='Shared rig and slot replacement';$('capeBack').parentElement.remove();
 $('gear').parentElement.insertAdjacentHTML('afterend','<button id="checkFits">Check all equipment fits</button><p id="fitReport" role="status"></p>');
+$('checkFits').insertAdjacentHTML('afterend','<button id="responsive">Open portrait layout checks</button>');
+$('responsive').onclick=()=>{
+ if($('portraitLayouts'))return;
+ document.querySelector('main').style.minWidth='760px';
+ document.querySelector('main').insertAdjacentHTML('afterbegin','<section id="portraitLayouts" style="display:flex;gap:16px;width:100%">'+[[390,844],[320,667]].map(([w,h])=>`<div><h2>${w} × ${h}</h2><iframe title="Game ${w} × ${h}" src="../" width="${w}" height="${h}" style="border:0;display:block"></iframe></div>`).join('')+'</section>');
+};
 $('outfitGallery').parentElement.insertAdjacentHTML('afterend','<section style="width:100%"><h2>Same rig · idle / cut / cast / walk</h2><div id="poseGallery" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">'+['idle','slash','cast','walk'].map(action=>`<figure style="margin:0"><h3>${action}</h3><canvas id="pose-${action}" width="256" height="426"></canvas></figure>`).join('')+'</div></section>');
 for(const name of ['gear','relics',...Object.keys(PORTRAIT_FILES),...Object.keys(ENEMY_ATLAS)]){
  const image=new Image();image.src=PORTRAIT_FILES[name]?'../'+PORTRAIT_FILES[name]:`../assets/${name}${ENEMY_ATLAS[name]?'-v2':''}.png`;sprites[name]=image;
 }
 await Promise.all(Object.values(sprites).map(image=>image.decode()));
 const portrait=new RiggedEquipmentFigure(sprites),combat=new Player3D(undefined,sprites);
+const hairstyles=Object.keys(APPEARANCE.hair),faces=Object.keys(APPEARANCE.face),skins=Object.keys(APPEARANCE.skin),colors=Object.keys(APPEARANCE.hairColor);
+$('outfitGallery').parentElement.insertAdjacentHTML('beforebegin','<section style="width:100%"><h2>Appearance · shared head bone / skin palette / hairstyles</h2><div id="appearanceGallery" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px">'+hairstyles.map((id,i)=>`<figure style="margin:0"><h3>${APPEARANCE.hair[id].label} · ${APPEARANCE.face[faces[i%6]].label}</h3><canvas id="appearance-${i}" width="240" height="320"></canvas></figure>`).join('')+'</div></section>');
+for(const [i,hair]of hairstyles.entries()){
+ const state=newSave();state.appearance={face:faces[i%6],skin:skins[i%6],hair,hairColor:colors[i%6]};state.equipment.armor='leather-vest';
+ portrait.sync(state,{appearance:true,angle:0,reducedMotion:true,posture:{twist:0}});
+ const c=$('appearance-'+i).getContext('2d');c.imageSmoothingEnabled=false;c.drawImage(portrait.canvas,0,0,480,640,0,0,240,320);
+}
 const presets={
  regression:{helm:'rogue-hood',armor:null,pants:'rogue-pants',boots:null,weapon:'venom-dagger',offhand:'parry-dagger',cloak:null,neck:null},
  warrior:{helm:'wolf-helm',armor:'scale-mail',pants:'iron-greaves',boots:'plate-boots',weapon:'iron-sword',offhand:'steel-shield',cloak:'red-cape',neck:'sun-necklace'},

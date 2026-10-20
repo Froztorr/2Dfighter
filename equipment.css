@@ -54,4 +54,10 @@
 .equipmentDescription button{color:#64c2aa;min-height:44px}
 .equipmentDescription details{border-top:1px solid #59616b;padding:10px 0}
 .poseStudioLink{font:12px Arial;color:#c9b380;text-decoration:none;padding:12px;min-height:40px}
+.appearance .equipmentStage{justify-content:center}
+#panel .appearance .equipmentFigure #heroPreview{height:min(100%,400px)}
+.appearanceOptions{flex-shrink:0;max-height:46%;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px 8px 20px;font:12px Arial;touch-action:pan-y}
+.appearanceOptions label{display:grid;gap:6px;color:#b9c7d6}
+.appearanceOptions select{width:100%;min-width:0;min-height:44px;border:1px solid #718196;border-radius:3px;background:#354151;color:#f0eee5;padding:8px;font:14px Arial}
+.appearanceOptions p,.appearanceOptions [role=status]{grid-column:1/-1;margin:0;color:#9bbbad;font:12px/1.5 Arial}
 @media(max-height:680px){.overview .equipmentHeader{min-height:76px}.equipmentRail{gap:9px}.equipmentBelt{margin-top:12px}.equipmentNav{padding:0}.equipmentVitals{margin-bottom:12px}.equipmentHeader{min-height:52px}.equipmentViews{height:38px}.equipmentSelection{font-size:11px}}

@@ -1,3 +1,4 @@
+import {APPEARANCE,cleanAppearance} from './appearance.mjs';
 import * as THREE from './vendor/three.module.js';
 import {ITEMS} from './core.mjs';
 import {organicLimb,sculptedHand} from './player-sculpt.mjs';
@@ -70,19 +71,7 @@ export class CharacterRig {
   this.base.pants=this.group('base-pants');this.trousers(this.base.pants,baseMat);
   this.base.boots=this.group('base-boots');this.boots(this.base.boots,bootMat,false);
   mesh(neck,new THREE.CylinderGeometry(.052,.064,.12,32),this.mats.skin,[0,.035,0]);
-  this.hair=[oval(head,.11,this.mats.hair,[0,.005,-.009],[.92,1.27,.86])];
-  oval(head,.105,this.mats.skin,[0,-.015,.025],[.89,1.18,.86]);
-  const face=this.group('face-features',head);
-  const eye=new THREE.MeshLambertMaterial({color:0x28252b}),lips=new THREE.MeshLambertMaterial({color:0x935b4c});
-  for(const sign of [-1,1]){
-   oval(head,.022,this.mats.skin,[sign*.102,-.005,0],[.55,1,.55]);
-   oval(face,.012,eye,[sign*.037,.012,.115],[.72,.55,.35]);
-   const brow=mesh(face,new THREE.BoxGeometry(.035,.007,.007),this.mats.hair,[sign*.036,.039,.111]);brow.rotation.z=sign*-.13;
-   this.hair.push(oval(head,.042,this.mats.hair,[sign*.075,.075,.027],[.9,.8,1.2]));
-  }
-  oval(face,.016,this.mats.skin,[0,-.018,.123],[.55,1.2,.8]);
-  mesh(face,new THREE.BoxGeometry(.034,.006,.005),lips,[0,-.060,.111]);
-  for(let i=-2;i<=2;i++){const lock=oval(head,.04,this.mats.hair,[i*.035,.096,.055],[.75,.8,1]);lock.rotation.z=i*.18;this.hair.push(lock);}
+  this.setAppearance();
   for(const [side,arm]of Object.entries(this.arms)){
    const hand=mesh(arm.grip,sculptedHand(side),this.mats.glove);hand.scale.setScalar(1.03);arm.hand=hand;
    const gesture=this.group('casting-hand',arm.grip);arm.gesture=gesture;gesture.visible=false;
@@ -92,6 +81,43 @@ export class CharacterRig {
    band(arm.wrist,.029,this.mats.gold,[0,-.005,0],[1,1,.85]);
   }
   this.pose({time:0,reducedMotion:true});
+ }
+ setAppearance(value,helm=null){
+  const a=cleanAppearance(value),signature=JSON.stringify(a);
+  if(signature!==this.appearanceSignature){
+   this.appearanceSignature=signature;
+   if(this.headVisual)release(this.headVisual,new Set(Object.values(this.mats)));
+   for(const [key,color,kind]of [['skin',APPEARANCE.skin[a.skin].color,'skin'],['hair',APPEARANCE.hairColor[a.hairColor].color,'hair']]){
+    const material=this.material(null,color,kind);this.mats[key].copy(material);this.mats[key].userData.tint=color;material.dispose();
+   }
+   const head=this.headVisual=this.group('face-features',this.bones.head),f=APPEARANCE.face[a.face],female=a.face.startsWith('woman-');
+   oval(head,.105,this.mats.skin,[0,-.009,.023],[f.width,1.15,.86]);
+   oval(head,.069,this.mats.skin,[0,-.062,.045],[f.jaw,.68,.78]);
+   const eye=new THREE.MeshLambertMaterial({color:0x22212b}),lips=new THREE.MeshLambertMaterial({color:female?0x995c58:0x70483e});
+   for(const sign of [-1,1]){
+    oval(head,.021,this.mats.skin,[sign*.095,-.005,0],[.55,1,.55]);
+    oval(head,.012,eye,[sign*f.eye,.013,.115],[female?.85:.72,female?.65:.55,.35]);
+    const brow=mesh(head,new THREE.BoxGeometry(.032,female?.005:.007,.007),this.mats.hair,[sign*f.eye,.039,.112]);brow.rotation.z=sign*f.brow;
+   }
+   oval(head,.016,this.mats.skin,[0,-.018,.122],[female?.48:.58,1.2,.8]);
+   mesh(head,new THREE.BoxGeometry(female?.035:.030,female?.008:.005,.005),lips,[0,-.057,.112]);
+   const hair=this.group('hairstyle-'+a.hair,head);this.hair=[hair];
+   mesh(hair,new THREE.SphereGeometry(.111,32,20,0,Math.PI*2,0,1.32),this.mats.hair,[0,.005,-.010],[.94,1.24,.92]);
+   // Locks share the head bone; covered hairstyles are replaced by the equipped headwear.
+   const lock=(p,scale,rotation=0)=>{const m=oval(hair,.04,this.mats.hair,p,scale);m.rotation.z=rotation;return m;};
+   if(a.hair==='crop'||a.hair==='spikes')for(let i=-2;i<=2;i++)lock([i*.034,.098+(a.hair==='spikes'?.015:0),.053],[.7,a.hair==='spikes'?1.35:.7,1],i*.20);
+   if(a.hair==='swept'||a.hair==='ponytail'||a.hair==='bun')for(let i=0;i<4;i++)lock([-.065+i*.033,.088-i*.013,.079],[.75,1.25,.48],-.65);
+   if(['bob','long','braid'].includes(a.hair))for(const sign of [-1,1]){
+    lock([sign*.053,.077,.068],[1,1.05,.8],sign*.55);
+    lock([sign*.093,a.hair==='bob'?-.015:-.052,.003],[.45,a.hair==='bob'?1.65:2.55,1]);
+   }
+   if(a.hair==='long')for(let i=-2;i<=2;i++)lock([i*.034,-.105,-.086],[.65,3.1,.55],i*.045);
+   if(a.hair==='bob')for(let i=-2;i<=2;i++)lock([i*.035,-.028,-.085],[.65,1.65,.65]);
+   if(a.hair==='ponytail'){lock([0,.035,-.132],[.7,1.1,.9]);for(let i=0;i<4;i++)lock([.015*Math.sin(i),-.015-i*.048,-.145-i*.009],[.65-i*.08,1,.65]);}
+   if(a.hair==='braid')for(let i=0;i<8;i++)lock([(i%2?1:-1)*.012,-.025-i*.029,-.126],[.46-i*.025,.57,.5]);
+   if(a.hair==='bun'){lock([0,.098,-.098],[1.2,1.05,1.1]);band(hair,.041,this.mats.gold,[0,.086,-.098]);}
+  }
+  for(const hair of this.hair)hair.visible=!helm;
  }
  group(name,parent=this.root){const group=new THREE.Group();group.name=name;parent.add(group);return group;}
  material(id,color,kind){
@@ -231,9 +257,9 @@ export class CharacterRig {
   }
  }
  equip(save){
+  this.setAppearance(save.appearance,save.equipment.helm);
   const equipment={...save.equipment};if(ITEMS[equipment.weapon]?.hands===2)equipment.offhand=null;
   const signature=Object.values(equipment).join(':');if(signature===this.signature)return;this.signature=signature;
-  for(const hair of this.hair)hair.visible=!['wolf-helm','frost-helm'].includes(equipment.helm);
   // A slot replaces its old mesh. Nothing is stacked over a permanently dressed body.
   const shared=new Set(Object.values(this.mats));for(const group of Object.values(this.equipment)){for(const attached of group.userData.attached||[])release(attached,shared);release(group,shared);}this.equipment={};
   for(const [part,visible]of Object.entries({torso:!equipment.armor,arms:!equipment.armor,pants:!equipment.pants,boots:!equipment.boots})){
@@ -361,6 +387,19 @@ export function aimWeapon(model,side,target,posture={}){
  return {[key]:[angles.x,angles.y,angles.z]};
 }
 
+export function postureFrame(model,posture,angle=.55){
+ const bounds=new THREE.Box3(new THREE.Vector3(-.66,-.12,-.3),new THREE.Vector3(.66,2.08,.3));
+ for(let time=0;time<=550;time+=55){
+  model.pose({posture,angle,action:'slash',time,reducedMotion:true});
+  for(const bone of Object.values(model.bones)){
+   const p=bone.getWorldPosition(new THREE.Vector3());
+   bounds.expandByPoint(p.clone().addScalar(.16));bounds.expandByPoint(p.clone().addScalar(-.16));
+  }
+  for(const slot of ['weapon','offhand'])if(model.equipment[slot])bounds.expandByObject(model.equipment[slot],true);
+ }
+ const center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3());
+ return {center,zoom:Math.min(1,1.24/size.x,2.08/size.y)};
+}
 export class RiggedEquipmentFigure {
  constructor(sprites={},renderer=combatWebGLRenderer()){
   this.renderer=renderer;this.model=new CharacterRig(sprites);this.scene=new THREE.Scene();this.scene.add(this.model.root);
@@ -369,7 +408,18 @@ export class RiggedEquipmentFigure {
   this.canvas=document.createElement('canvas');this.canvas.width=480;this.canvas.height=800;this.context=this.canvas.getContext('2d');this.pixels=document.createElement('canvas');this.pixels.width=240;this.pixels.height=400;this.pixelContext=this.pixels.getContext('2d',{willReadFrequently:true});
   const floor=mesh(this.scene,new THREE.CircleGeometry(.36,48),new THREE.MeshBasicMaterial({color:0x0d1413,transparent:true,opacity:.5}),[0,.007,0]);floor.rotation.x=-Math.PI/2;
  }
- sync(save,state={}){this.model.equip(save);this.model.pose({...state,posture:state.posture??state.poses?.[stanceFor(save.equipment)]??AUTHORED_POSES[stanceFor(save.equipment)]});this.renderer.render(this.scene,this.camera);this.context.clearRect(0,0,480,800);this.pixelContext.imageSmoothingEnabled=false;this.pixelContext.clearRect(0,0,240,400);this.pixelContext.drawImage(this.renderer.domElement,0,0,240,400);
+ sync(save,state={}){
+  this.model.equip(save);
+  const posture=state.posture??state.poses?.[stanceFor(save.equipment)]??AUTHORED_POSES[stanceFor(save.equipment)];
+  // Frame the complete cut once, so the camera never pumps as the weapon swings.
+  if(!state.posture&&!state.appearance){
+   const key=JSON.stringify([save.equipment,posture,state.angle??.55]);
+   if(key!==this.frameKey){this.frameKey=key;this.framing=postureFrame(this.model,posture,state.angle??.55);}
+  }
+  this.model.pose({...state,posture});
+  this.camera.zoom=state.appearance?2.5:state.posture?1:this.framing?.zoom??1;
+  const focus=state.appearance?this.model.bones.head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0,-.12,0)):state.posture?new THREE.Vector3(0,.98,0):this.framing?.center??new THREE.Vector3(0,.98,0);
+  this.camera.position.set(focus.x,focus.y,4);this.camera.lookAt(focus.x,focus.y,0);this.camera.updateProjectionMatrix();this.renderer.render(this.scene,this.camera);this.context.clearRect(0,0,480,800);this.pixelContext.imageSmoothingEnabled=false;this.pixelContext.clearRect(0,0,240,400);this.pixelContext.drawImage(this.renderer.domElement,0,0,240,400);
   const frame=this.pixelContext.getImageData(0,0,240,400),data=frame.data;for(let i=0;i<data.length;i+=4){if(data[i+3]<120){data[i+3]=0;continue;}data[i+3]=255;for(let c=0;c<3;c++)data[i+c]=Math.min(255,Math.round(data[i+c]/8)*8);}this.pixelContext.putImageData(frame,0,0);this.context.imageSmoothingEnabled=false;this.context.drawImage(this.pixels,0,0,480,800);}
  destroy(){this.model.destroy();release(this.scene);this.canvas.width=this.canvas.height=0;this.renderer.renderLists.dispose();}
 }

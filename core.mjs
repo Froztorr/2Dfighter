@@ -1,3 +1,4 @@
+import {cleanAppearance} from './appearance.mjs';
 export const ITEMS = {
   'rust-sword': { name: 'Rust Sword', slot: 'weapon', cost: 0, attack: 3, icon:0 },
   'iron-sword': { name: 'Iron Sword', slot: 'weapon', cost: 180, attack: 8, icon:1 },
@@ -190,7 +191,7 @@ export function recognize(points){
  }
  return null;
 }
-export function newSave() { return { gold: 80, level: 1, xp:0, potions:3, unlocked: 1, bestStars:{}, owned: ['rust-sword', 'ember-staff','wood-shield','venom-dagger','parry-dagger'], equipment: { helm: null, armor: null, pants: null, boots: null, ring1: null, ring2:null,neck:null,cloak:null, weapon: 'rust-sword',offhand:'wood-shield' }, upgrades: { vigor: 0, edge: 0 } }; }
+export function newSave() { return { appearance:cleanAppearance(), gold: 80, level: 1, xp:0, potions:3, unlocked: 1, bestStars:{}, owned: ['rust-sword', 'ember-staff','wood-shield','venom-dagger','parry-dagger'], equipment: { helm: null, armor: null, pants: null, boots: null, ring1: null, ring2:null,neck:null,cloak:null, weapon: 'rust-sword',offhand:'wood-shield' }, upgrades: { vigor: 0, edge: 0 } }; }
 export function stats(save) {
   const s = { attack: 7 + save.upgrades.edge * 2, armor: save.upgrades.vigor, maxHp: 100 + save.upgrades.vigor * 12, magic: false };
   Object.entries(save.equipment).forEach(([slot,id]) => { const i = ITEMS[id]; if (i && !(slot==='offhand'&&ITEMS[save.equipment.weapon]?.hands===2)) { s.attack += i.attack || 0; s.armor += i.armor || 0; s.maxHp+=i.health||0; s.magic ||= !!i.magic; } });
@@ -201,6 +202,7 @@ export function buy(save, id) { const item = ITEMS[id]; if (!item || save.owned.
 export function loadSave(text) {
   let raw; try { raw = JSON.parse(text); } catch { return newSave(); }
   const base = newSave(); if (!raw || typeof raw !== 'object') return base;
+  base.appearance=cleanAppearance(raw.appearance);
   base.gold = Math.max(0, Math.min(99999, Math.floor(Number(raw.gold)) || 0)); base.level = Math.max(1, Math.min(20, Math.floor(Number(raw.level)) || 1)); base.unlocked = Math.max(1, Math.min(FLOORS.length, Math.floor(Number(raw.unlocked)) || 1));
   for(const key of ['xp','potions'])if(Number.isFinite(raw[key]))base[key]=Math.max(0,Math.min(key==='xp'?1999:99,Math.floor(raw[key])));
   if (Array.isArray(raw.owned)) base.owned = [...new Set([...base.owned, ...raw.owned.filter(id => ITEMS[id])])];
