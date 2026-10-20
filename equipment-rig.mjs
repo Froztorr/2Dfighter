@@ -2,16 +2,18 @@ import * as THREE from './vendor/three.module.js';
 import {ITEMS} from './core.mjs';
 import {organicLimb,sculptedHand} from './player-sculpt.mjs';
 import {solveArm} from './player-rig.mjs';
-import {makeWeapon,makeShield,combatWebGLRenderer} from './player-3d.mjs';
+import {makeWeapon,makeShield,combatWebGLRenderer,WEAPON_STYLES} from './player-3d.mjs';
 
 const clamp=THREE.MathUtils.clamp;
 // Palm targets are in body space; every garment follows the same solved skeleton.
 const STANCES={
- staff:{right:[-.26,1.02,.26],rotation:[.05,0,-.35],spread:.25,feet:[.14,.09],twist:.12,lower:.02},
- greatsword:{right:[-.02,1.14,.30],rotation:[.12,0,.85],spread:-.125,feet:[.18,-.10],twist:-.22,lower:.04},
+ staff:{right:[-.48,1.31,.22],rotation:[-.25,0,3.45],left:[.24,1.02,.04],leftRotation:[-.45,-.15,-2.85],feet:[.13,.04],twist:.10,lower:.01},
+ greatsword:{right:[-.36,1.46,.10],rotation:[0,0,3.21],left:[.28,.89,.08],leftRotation:[0,0,-.12],feet:[.18,.05],twist:-.16,lower:.015},
  greataxe:{right:[-.12,1.12,.29],rotation:[.16,0,-.55],spread:-.125,feet:[.20,-.04],twist:.18,lower:.05},
- dual:{right:[-.30,1.13,.23],rotation:[.12,0,.65],left:[.32,.99,.23],leftRotation:[-.15,0,-2.5],feet:[.21,.13],twist:.28,lower:.06},
- shield:{right:[-.32,1.01,.19],rotation:[.10,0,.35],left:[.23,1.20,.32],leftRotation:[-.15,-.25,-.12],feet:[.16,-.13],twist:-.18,lower:.025},
+ mixed:{right:[-.17,1.51,.12],rotation:[.08,-.18,1.65],left:[.25,1.00,.25],leftRotation:[.15,.1,1.7],feet:[.23,.17],twist:.34,lower:.09},
+ swords:{right:[-.29,.91,.16],rotation:[.1,0,2.16],left:[.29,.92,.24],leftRotation:[.15,.3,2.18],feet:[.19,.06],twist:-.12,lower:.02},
+ dual:{right:[-.18,1.24,.31],rotation:[.05,-.1,-.9],left:[.35,1.18,.20],leftRotation:[.05,.1,-.12],feet:[.20,.17],twist:.28,lower:.07},
+ shield:{right:[-.29,.92,.16],rotation:[.12,0,2.95],left:[.25,.91,.28],leftRotation:[.08,-.25,-.12],feet:[.15,-.09],twist:-.12,lower:.02},
  wand:{right:[-.30,1.19,.25],rotation:[-.14,0,.28],left:[.29,.91,.12],leftRotation:[0,0,-.15],feet:[.12,.06],twist:.10,lower:.01},
  single:{right:[-.29,.98,.17],rotation:[.12,0,.45],left:[.28,.88,.08],leftRotation:[0,0,-.12],feet:[.12,-.03],twist:-.10,lower:.01}
 };
@@ -59,6 +61,10 @@ export class CharacterRig {
   for(let i=-2;i<=2;i++){const lock=oval(head,.04,this.mats.hair,[i*.035,.096,.055],[.75,.8,1]);lock.rotation.z=i*.18;this.hair.push(lock);}
   for(const [side,arm]of Object.entries(this.arms)){
    const hand=mesh(arm.grip,sculptedHand(side),this.mats.glove);hand.scale.setScalar(1.03);arm.hand=hand;
+   const gesture=this.group('casting-hand',arm.grip);arm.gesture=gesture;gesture.visible=false;
+   oval(gesture,.026,this.mats.glove,[0,-.004,.012],[1,1.35,.60]);
+   for(let i=0;i<4;i++){const x=(i-1.5)*.014,extended=i===1||i===2;ribbon([[x,-.022,.013],[x,-.045,.012],[x+(i-1.5)*.004,extended?-.088:-.048,extended?.012:.035]],.006,this.mats.glove,gesture);}
+   ribbon([[-.018,.01,.014],[-.037,-.005,.016],[-.042,-.023,.026]],.007,this.mats.glove,gesture);
    band(arm.wrist,.029,this.mats.gold,[0,-.005,0],[1,1,.85]);
   }
   this.pose({time:0,reducedMotion:true});
@@ -124,16 +130,18 @@ export class CharacterRig {
   }
  }
  boots(group,mat,tall,id=null){
-  for(const leg of Object.values(this.legs)){
+  for(const [side,leg]of Object.entries(this.legs)){
    const foot=this.group('boot',leg.ankle);group.userData.attached??=[];group.userData.attached.push(foot);
    oval(foot,.065,mat,[0,-.03,.036],[.76,.65,1.55]);oval(foot,.061,this.mats.dark,[0,-.062,.04],[.8,.14,1.62]);
-   mesh(foot,new THREE.CylinderGeometry(tall?.063:.037,.034,tall?.29:.09,32,6),mat,[0,tall?.13:.035,0],[1,1,.86]);
-   band(foot,tall?.064:.039,this.mats.gold,[0,tall?.275:.08,0],[1,1,.86]);
+   const shaft=this.group('boot-shaft',leg.knee);shaft.position.y=-.39;group.userData.attached.push(shaft);
+   const shell=tube(tall?[[.065,.035],[.11,.038],[.18,.047],[.28,.061],[.355,.064]]:[[.065,.035],[.11,.037],[.16,.039]],.86);shell.translate(leg.sign*.097,0,0);
+   const upper=this.skin(group,shell,mat,(x,y)=>{const blend=clamp((y-.08)/.08,0,1);return [[side+'Ankle',1-blend],[side+'Knee',blend]];});upper.name='boot-upper-'+side;
+   band(shaft,tall?.064:.039,this.mats.gold,[0,tall?.275:.08,0],[1,1,.86]);
    for(const y of [0,.035])band(foot,.038,this.mats.glove,[0,y,0],[1,1,.88]);
    if(tall){
     const front=id?this.material(id,mat.userData.tint??mat.color.getHex(),id==='plate-boots'?'steel':'leather'):mat,g=planarUV(new THREE.SphereGeometry(.055,32,20));
-    for(let i=0;i<g.attributes.uv.count;i++)g.attributes.uv.setY(i,1-g.attributes.uv.getY(i));mesh(foot,g,front,[0,.145,.034],[.90,2.55,.40]);
-    for(const [y,r]of [[.10,.047],[.215,.058]]){band(foot,r,this.mats.glove,[0,y,0],[1,1,.86]);oval(foot,.006,this.mats.gold,[.019,y,r*.9],[1,1,.5]);}
+    for(let i=0;i<g.attributes.uv.count;i++)g.attributes.uv.setY(i,1-g.attributes.uv.getY(i));mesh(shaft,g,front,[0,.145,.034],[.90,2.55,.40]);
+    for(const [y,r]of [[.10,.047],[.215,.058]]){band(shaft,r,this.mats.glove,[0,y,0],[1,1,.86]);oval(shaft,.006,this.mats.gold,[.019,y,r*.9],[1,1,.5]);}
    }
   }
  }
@@ -212,7 +220,9 @@ export class CharacterRig {
   for(const [slot,id]of Object.entries(equipment)){
    if(!id)continue;const item=ITEMS[id];if(!item)continue;
    if(slot==='weapon'||slot==='offhand'){
-    const object=item.shield?makeShield(id):makeWeapon(id),arm=this.arms[slot==='weapon'?'right':'left'];arm.grip.add(object);object.userData.item=id;const materials=new Map();object.traverse(o=>{if(!o.isMesh)return;const source=o.material;if(!materials.has(source)){materials.set(source,new THREE.MeshLambertMaterial({color:source.color,emissive:source.emissive,emissiveIntensity:source.emissiveIntensity}));source.dispose();}o.material=materials.get(source);});
+    const object=item.shield?makeShield(id):makeWeapon(id),arm=this.arms[slot==='weapon'&&!item.magic?'right':'left'];arm.grip.add(object);object.userData.item=id;const materials=new Map();object.traverse(o=>{if(!o.isMesh)return;const source=o.material;if(!materials.has(source)){materials.set(source,new THREE.MeshLambertMaterial({color:source.color,emissive:source.emissive,emissiveIntensity:source.emissiveIntensity}));source.dispose();}o.material=materials.get(source);});
+    if(id==='greatsword')object.scale.set(1.3,1.9,1.1);
+    if(item.magic){object.scale.y=1.25;object.position.y=-.25;}
     if(item.shield){
      object.rotation.y=Math.PI;object.position.z=.065;
      if(id!=='wood-shield')object.children[0].material.color.setHex({'steel-shield':0x8393a1,'guardian-shield':0xbf9b55,'frost-shield':0x78bccf}[id]);
@@ -237,33 +247,51 @@ export class CharacterRig {
    }
   }
   for(const [side,arm]of Object.entries(this.arms)){
-   const item=ITEMS[equipment[side==='right'?'weapon':ITEMS[equipment.weapon]?.hands===2?'weapon':'offhand']],profile={radiusX:item?.shield?.011:item?.magic?.018:.014,radiusZ:item?.shield?.011:item?.magic?.018:.012,round:!!item?.shield};
+   const item=ITEMS[equipment[side==='right'?'weapon':ITEMS[equipment.weapon]?.hands===2?'weapon':'offhand']],large=equipment.weapon==='greatsword',profile={radiusX:item?.shield?.011:large?.019:item?.magic?.018:.014,radiusZ:item?.shield?.011:large?.014:item?.magic?.018:.012,round:!!item?.shield};
    if(JSON.stringify(profile)!==arm.profile){arm.hand.geometry.dispose();arm.hand.geometry=sculptedHand(side,profile);arm.profile=JSON.stringify(profile);}
   }
  }
  pose({time=0,action='idle',angle=.55,reducedMotion=false}={}){
   const t=reducedMotion?0:time/1000,breathe=Math.sin(t*2)*.006;
   const weapon=ITEMS[this.equipment.weapon?.userData.item],offhand=ITEMS[this.equipment.offhand?.userData.item];
-  const family=weapon?.hands===2?(weapon.magic?'staff':this.equipment.weapon.userData.item==='inferno-axe'?'greataxe':'greatsword'):offhand?.shield?'shield':offhand&&weapon?'dual':weapon?.magic?'wand':'single',stance=STANCES[family];
+  const mainSword=WEAPON_STYLES[this.equipment.weapon?.userData.item]?.kind==='sword',offSword=WEAPON_STYLES[this.equipment.offhand?.userData.item]?.kind==='sword';
+  const family=weapon?.magic?'staff':weapon?.hands===2?(this.equipment.weapon.userData.item==='inferno-axe'?'greataxe':'greatsword'):offhand?.shield?'shield':offhand&&weapon?(mainSword&&offSword?'swords':mainSword||offSword?'mixed':'dual'):'single',stance=STANCES[family],mirrored=family==='mixed'&&offSword;
   for(const [bone,position]of this.bindPositions){bone.rotation.set(0,0,0);bone.position.copy(position);}
   const progress=clamp(time/550,0,1),cycle=Math.sin(progress*progress*(3-2*progress)*Math.PI),cut=action==='slash'?cycle:0,cast=action==='cast'?cycle:0;
   this.root.rotation.y=angle;this.bones.hips.position.y-=stance.lower;
-  this.bones.spine.rotation.x=breathe+cut*.07;this.bones.chest.rotation.y=stance.twist+Math.sin(t*.9)*.012-cut*.28;
+  this.bones.spine.rotation.x=breathe+cut*.07;this.bones.chest.rotation.y=stance.twist*(mirrored?-1:1)+Math.sin(t*.9)*.012-cut*.28;
   this.bones.head.rotation.y=-stance.twist*.65+.10-Math.sin(t*.9)*.015;
-  const right=new THREE.Vector3(...stance.right),rotation=new THREE.Euler(...stance.rotation);
+  let right=new THREE.Vector3(...stance.right);const rotation=new THREE.Euler(...stance.rotation);
   right.x+=cut*(family==='staff'?.22:stance.spread?.02:.32);right.y+=cut*.17+cast*.09+breathe;right.z+=cut*(stance.spread?.035:.10)+cast*.02;
   rotation.x+=cut*(family==='staff'?.65:1.15)-cast*.25;rotation.z+=cut*(family==='staff'?.35:family==='greataxe'?.5:-.65);
   let left=new THREE.Vector3(...(stance.left||[0,1,.2])),leftRotation=new THREE.Euler(...(stance.leftRotation||[0,0,0]));
   if(family==='dual'){left.x-=cut*.24;left.y+=cut*.21;left.z+=cut*.1;leftRotation.x-=cut*.8;leftRotation.z+=cut*.8;}
   if(action==='guard'){left.set(.08,1.32,.34);leftRotation.set(-.12,-.15,0);}
-  if(cast&&!stance.spread){left.set(.25,1.13+cast*.1,.25);leftRotation.set(-.5,0,-.2);}
+  if(cast&&!stance.spread&&family!=='staff'){left.set(.25,1.13+cast*.1,.25);leftRotation.set(-.5,0,-.2);}
   if(action==='walk'&&!stance.spread){right.y+=Math.sin(t*5)*.025;left.y-=Math.sin(t*5)*.025;}
-  const rightQ=new THREE.Quaternion().setFromEuler(rotation);
-  if(stance.spread){left=right.clone().add(new THREE.Vector3(0,stance.spread,0).applyQuaternion(rightQ));leftRotation.copy(rotation);}
+  let rightQ=new THREE.Quaternion().setFromEuler(rotation),leftQ=new THREE.Quaternion().setFromEuler(leftRotation);
+  if(family==='greatsword'||family==='mixed'){
+   right.set(...stance.right).lerp(new THREE.Vector3(-.12,family==='greatsword'?1.30:1.10,.25),cut);right.y+=breathe;
+   rightQ.setFromEuler(new THREE.Euler(...stance.rotation)).slerp(new THREE.Quaternion().setFromEuler(new THREE.Euler(-.9,0,Math.PI-.05)),cut);
+   if(family==='greatsword'){
+    const join=cut;
+    left.lerp(right.clone().add(new THREE.Vector3(0,-.2375,0).applyQuaternion(rightQ)),join);leftQ.slerp(rightQ,join);
+   }
+  }
+  if(family==='staff'){
+   right.set(...stance.right);right.y+=breathe+(cast||cut)*.1;right.z+=(cast||cut)*.09;
+   rightQ.setFromEuler(new THREE.Euler(-.25-(cast||cut)*.35,0,3.45));
+  }
+  if(stance.spread){left=right.clone().add(new THREE.Vector3(0,stance.spread,0).applyQuaternion(rightQ));leftQ.copy(rightQ);}
+  if(mirrored){
+   [right,left]=[left,right];right.x*=-1;left.x*=-1;[rightQ,leftQ]=[leftQ,rightQ];
+   for(const q of [rightQ,leftQ]){q.y*=-1;q.z*=-1;}
+  }
   // Solve both elbows to the authored palms, never rotate an independent prop over a hand.
   this.root.updateMatrixWorld(true);
   for(const [side,arm]of Object.entries(this.arms)){
-   const local=side==='right'?right:left,q=side==='right'?rightQ:new THREE.Quaternion().setFromEuler(leftRotation);
+   arm.gesture.visible=family==='staff'&&side==='right';arm.hand.visible=!arm.gesture.visible;
+   const local=side==='right'?right:left,q=side==='right'?rightQ:leftQ;
    const worldQ=this.root.getWorldQuaternion(new THREE.Quaternion()).multiply(q),palm=this.root.localToWorld(local.clone());
    const wrist=palm.clone().add(new THREE.Vector3(0,.055,-.014).applyQuaternion(worldQ)),shoulder=arm.shoulder.getWorldPosition(new THREE.Vector3()),pole=this.root.localToWorld(new THREE.Vector3(arm.sign*.48,1.08,.06));
    const solved=solveArm(shoulder,wrist,pole,{upper:.29,forearm:.255}),down=new THREE.Vector3(0,-1,0),upperQ=new THREE.Quaternion().setFromUnitVectors(down,solved.elbow.clone().sub(shoulder).normalize()),foreQ=new THREE.Quaternion().setFromUnitVectors(down,solved.wrist.clone().sub(solved.elbow).normalize());

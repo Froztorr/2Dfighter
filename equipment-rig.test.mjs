@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {Vector3} from './vendor/three.module.js';
+import {Vector3,Quaternion} from './vendor/three.module.js';
 import {ITEMS,newSave} from './core.mjs';
 import {CharacterRig} from './equipment-rig.mjs';
 
@@ -50,32 +50,32 @@ test('animated equipment stays in the physical grip and limbs retain their lengt
  }finally{model.destroy();}
 });
 
-test('two handed weapons keep both closed hands on the same shaft through a cut',()=>{
+test('reference stances select the correct hand, blade direction and relaxed/ready silhouette',()=>{
  const model=new CharacterRig(),save=newSave();
- try{for(const weapon of ['greatsword','ember-staff','ice-staff','demon-staff','inferno-axe']){
-  save.equipment.weapon=weapon;model.equip(save);
-  for(const action of ['idle','slash','cast','guard'])for(let time=0;time<=550;time+=25){model.pose({action,time,angle:.5});
-   const expected=model.arms.right.grip.localToWorld(new Vector3(0,ITEMS[weapon].magic?.25:-.125,0)),actual=model.arms.left.grip.getWorldPosition(new Vector3());assert.ok(expected.distanceTo(actual)<1e-5,weapon+' support hand slips');
-  }
- }}finally{model.destroy();}
-});
-
-test('changing weapon families changes the whole ready stance and restores it after a cut',()=>{
- const model=new CharacterRig(),save=newSave(),poses=[];
+ const point=(side)=>model.arms[side].grip.getWorldPosition(new Vector3());
+ const direction=(slot)=>{const prop=model.equipment[slot];return prop.localToWorld(new Vector3(0,1,0)).sub(prop.getWorldPosition(new Vector3())).normalize();};
  try{
-  for(const [weapon,offhand]of [['ember-staff',null],['greatsword',null],['venom-dagger','parry-dagger'],['iron-sword','steel-shield']]){
-   save.equipment.weapon=weapon;save.equipment.offhand=offhand;model.equip(save);model.pose({time:0,angle:0,reducedMotion:true});
-   const snapshot=()=>['rightGrip','leftGrip','rightAnkle','leftAnkle'].map(name=>model.bones[name].getWorldPosition(new Vector3()));
-   const ready=snapshot();poses.push(ready);
-   if(weapon==='ember-staff')assert.ok(ready[1].y-ready[0].y>.18,'staff hands must spread along the shaft, not both crowd the pommel');
-   if(offhand==='steel-shield')assert.ok(ready[1].y>1.1&&ready[1].z>.2,'shield must cover the chest');
-   model.pose({action:'slash',time:270,angle:0});assert.ok(ready[0].distanceTo(snapshot()[0])>.08,'cut needs an actual arm movement');
-   model.pose({action:'slash',time:550,angle:0,reducedMotion:true});snapshot().forEach((p,i)=>assert.ok(p.distanceTo(ready[i])<1e-5,'recovery must settle into the equipped stance'));
+  for(const [weapon,offhand]of [['greatsword',null],['iron-sword','mace'],['ember-staff',null],['iron-sword','rust-sword'],['iron-sword','steel-shield'],['venom-dagger','mace']]){
+   save.equipment.weapon=weapon;save.equipment.offhand=offhand;model.equip(save);model.pose({angle:0,reducedMotion:true});
+   const ready=[point('right'),point('left')];
+   if(weapon==='greatsword'){assert.ok(direction('weapon').y<-.9,'resting greatsword must point down');const tip=model.equipment.weapon.localToWorld(new Vector3(0,.72,0));assert.ok(tip.y>=0&&tip.y<.20,'greatsword tip rests close to the ground');assert.ok(ready[0].y>1.35&&ready[1].y<1);}
+   else if(weapon==='ember-staff'){assert.equal(model.equipment.weapon.parent,model.arms.left.grip);assert.ok(model.arms.right.gesture.visible,'mage has a free casting hand');assert.ok(direction('weapon').y<-.4);}
+   else if(offhand==='mace'&&weapon==='iron-sword'){assert.ok(ready[0].y>1.4&&ready[1].y<1.1);assert.ok(Math.abs(direction('weapon').y)<.25,'sword rests horizontally over the shoulder');}
+   else if(offhand==='rust-sword'){assert.ok(ready.every(p=>p.y<1));assert.ok(direction('weapon').y<-.3&&direction('offhand').y<-.3,'both swords point low');}
+   else if(offhand==='steel-shield')assert.ok(ready[1].y<1.08&&ready[1].z>.2,'shield rests at the hip');
+   else assert.ok(ready[0].y>1.15&&ready[1].y>1.10,'short weapons use the raised asymmetric guard');
+   model.pose({action:'slash',time:275,angle:0});
+   if(weapon==='greatsword'){const grip=model.arms.right.grip.localToWorld(new Vector3(0,-.2375,0));assert.ok(grip.distanceTo(point('left'))<1e-5,'support hand joins the greatsword hilt for the cut');}
+   model.pose({action:'slash',time:550,angle:0,reducedMotion:true});['right','left'].forEach((side,i)=>assert.ok(point(side).distanceTo(ready[i])<1e-5,'cut returns to reference stance'));
+   let previous;
+   for(let time=0;time<=550;time+=10){
+    model.pose({action:'slash',time,angle:0,reducedMotion:true});
+    const hands=[point('right'),point('left')];
+    if(previous)hands.forEach((p,i)=>assert.ok(p.distanceTo(previous[i])<.07,weapon+' has a discontinuous hand path'));
+    previous=hands;
+   }
   }
-  for(let i=0;i<poses.length;i++)for(let j=i+1;j<poses.length;j++){
-   assert.ok(poses[i][0].distanceTo(poses[j][0])+poses[i][1].distanceTo(poses[j][1])>.15,'weapon families share the same arm pose');
-   assert.ok(poses[i][2].distanceTo(poses[j][2])+poses[i][3].distanceTo(poses[j][3])>.06,'weapon families share the same footing');
-  }
+  save.equipment.weapon='mace';save.equipment.offhand='iron-sword';model.equip(save);model.pose({angle:0,reducedMotion:true});assert.ok(point('left').y>1.4&&point('right').y<1.1,'the sword shoulder pose follows the hand actually holding the sword');
  }finally{model.destroy();}
 });
 
@@ -100,6 +100,27 @@ test('continuous garment vertices deform at elbows rather than splitting into pi
  try{
   const sleeve=model.equipment.armor.children.find(m=>m.isSkinnedMesh&&m.geometry.getAttribute('skinIndex').array.includes(model.skeleton.bones.indexOf(model.bones.rightElbow)));
   assert.ok(sleeve);const p=sleeve.geometry.attributes.position,index=Math.floor(p.count*.8),before=new Vector3().fromBufferAttribute(p,index);model.pose({time:0,reducedMotion:true});const a=sleeve.applyBoneTransform(index,before.clone());model.pose({action:'slash',time:270});const b=sleeve.applyBoneTransform(index,before.clone());assert.ok(a.distanceTo(b)>.1);
+ }finally{model.destroy();}
+});
+
+test('boot shafts follow the shin while soles stay planted in spread and bent-knee stances',()=>{
+ const model=new CharacterRig(),save=newSave();save.equipment.boots='trail-boots';save.equipment.weapon='venom-dagger';save.equipment.offhand='mace';model.equip(save);
+ try{
+  for(const action of ['idle','slash','walk'])for(const time of [0,120,275]){
+   model.pose({action,time});
+   for(const [side,leg]of Object.entries(model.legs)){
+    const upper=model.equipment.boots.getObjectByName('boot-upper-'+side);
+    assert.ok(upper?.isSkinnedMesh,'boot upper must deform with shin and ankle');
+    const p=upper.geometry.attributes.position,top=[];let highest=-Infinity;
+    for(let i=0;i<p.count;i++)highest=Math.max(highest,p.getY(i));
+    for(let i=0;i<p.count;i++)if(Math.abs(p.getY(i)-highest)<1e-5)top.push(upper.applyBoneTransform(i,new Vector3().fromBufferAttribute(p,i)));
+    const center=top.reduce((a,v)=>a.add(v),new Vector3()).divideScalar(top.length);upper.localToWorld(center);
+    const expected=leg.knee.localToWorld(new Vector3(0,highest-.47,0));
+    assert.ok(center.distanceTo(expected)<.003,'boot cuff is offset from shin');
+    const up=new Vector3(0,1,0).applyQuaternion(leg.ankle.getWorldQuaternion(new Quaternion()));
+    assert.ok(up.y>.999,'sole should remain planted');
+   }
+  }
  }finally{model.destroy();}
 });
 

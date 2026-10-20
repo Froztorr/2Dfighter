@@ -91,12 +91,19 @@ export function finishMini(save,kind,score,now=Date.now()){
   d.plays[kind]++;return grant(save,{gold:20+score*(kind==='forge'?5:10),xp:10+score*2,potions:score===max?1:0});
 }
 export const SLOTS={helm:'หมวก',armor:'เกราะ',pants:'กางเกง',boots:'รองเท้า',weapon:'อาวุธหลัก',offhand:'อาวุธรอง',ring1:'แหวน I',ring2:'แหวน II',neck:'สร้อย',cloak:'ผ้าคลุม'};
+export function fitsSlot(item,slot){
+  if(!item||!Object.hasOwn(SLOTS,slot))return false;
+  if((slot==='weapon'||slot==='offhand')&&(item.slot==='weapon'||item.slot==='offhand')){
+    return item.shield?slot==='offhand':item.hands===2?slot==='weapon':true;
+  }
+  return item.slot===(slot.startsWith('ring')?'ring':slot);
+}
 export function guardReduction(level){return Math.min(1,.8+Math.max(1,level)*.04);}
 export function stars(run){return run.damage===0&&run.potions===0?3:run.damage<=run.maxHp*.5&&run.potions<=1?2:1;}
 export function equip(save,slot,id){
   if(!Object.hasOwn(SLOTS,slot))return false;
   if(slot==='offhand'&&ITEMS[save.equipment.weapon]?.hands===2)return false;
-  if(id!==null&&(!save.owned.includes(id)||ITEMS[id]?.slot!==(slot.startsWith('ring')?'ring':slot)))return false;
+  if(id!==null&&(!save.owned.includes(id)||!fitsSlot(ITEMS[id],slot)))return false;
   if(id&&slot.startsWith('ring')&&Object.entries(save.equipment).some(([key,value])=>key!==slot&&value===id))return false;
   save.equipment[slot]=id;
   if(slot==='weapon'&&ITEMS[id]?.hands===2)save.equipment.offhand=null;
