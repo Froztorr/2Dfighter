@@ -5,7 +5,14 @@ export const POSE_LIMITS={
  rightFoot:[[-.38,.38],[.08,.25],[-.32,.32]],leftFoot:[[-.38,.38],[.08,.25],[-.32,.32]],
  rightPole:[[-.7,.7],[.8,1.65],[-.4,.5]],leftPole:[[-.7,.7],[.8,1.65],[-.4,.5]],
  rotation:[[-Math.PI,Math.PI],[-Math.PI,Math.PI],[-Math.PI,Math.PI]],leftRotation:[[-Math.PI,Math.PI],[-Math.PI,Math.PI],[-Math.PI,Math.PI]],
- hips:[[-.12,.12],[-.1,.06],[-.1,.1]],body:[[-.3,.3],[-.35,.35],[-.25,.25]],twist:[-.6,.6],lower:[0,.15]
+ hips:[[-.12,.12],[-.1,.06],[-.1,.1]],torso:[[-.08,.08],[-.06,.06],[-.08,.08]],
+ body:[[-.6,.6],[-.6,.6],[-.5,.5]],hipRotation:[[-.5,.5],[-.6,.6],[-.4,.4]],neckRotation:[[-.6,.6],[-1,1],[-.5,.5]],
+ ...Object.fromEntries(['right','left'].flatMap(side=>[
+  [side+'Shoulder',[[-1.3,1.3],[-1,1],[-1.3,1.3]]],
+  [side+'Elbow',[[-1.2,1.2],[-.5,.5],[-.4,.4]]],
+  [side+'Knee',[[-1.2,1.2],[-.15,.15],[-.2,.2]]],
+  [side+'Wrist',[[-Math.PI,Math.PI],[-Math.PI,Math.PI],[-Math.PI,Math.PI]]]
+ ])),twist:[-.6,.6],lower:[0,.15]
 };
 export function cleanPose(value){
  const result={};if(!value||typeof value!=='object')return result;

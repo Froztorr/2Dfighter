@@ -1,5 +1,5 @@
 import * as THREE from '../vendor/three.module.js';
-import {RiggedEquipmentFigure,STANCES} from '../equipment-rig.mjs';
+import {RiggedEquipmentFigure,STANCES,weaponTip,aimWeapon} from '../equipment-rig.mjs';
 import {ITEMS,SLOTS,newSave,loadSave} from '../core.mjs';
 import {POSE_LIMITS,cleanPose,readPoses,writePose} from '../pose-settings.mjs';
 
@@ -17,33 +17,58 @@ const saved=readPoses(storage),drafts={},dirty=new Set(),figure=new RiggedEquipm
 let original;try{original=loadSave(storage?.getItem('emberblade-v1'));}catch{original=newSave();}
 save.equipment={...save.equipment,helm:null,armor:'leather-vest',pants:'rogue-pants',boots:'trail-boots'};
 const canvas=$('figure'),context=canvas.getContext('2d');let family='greatsword',selected='right',drag=null,animation=0,animationStart=0;
-const joints={right:['R','มือขวา'],left:['L','มือซ้าย'],rightFoot:['R','เท้าขวา'],leftFoot:['L','เท้าซ้าย'],hips:['＋','สะโพก']};
+const joints={right:['R','ข้อมือขวา'],left:['L','ข้อมือซ้าย'],rightFoot:['R','เท้าขวา'],leftFoot:['L','เท้าซ้าย'],hips:['H','สะโพก / Hip'],torso:['T','ลำตัว / Torso'],neckRotation:['N','คอ'],
+ rightShoulder:['S','ไหล่ขวา'],leftShoulder:['S','ไหล่ซ้าย'],rightElbow:['E','ศอกขวา'],leftElbow:['E','ศอกซ้าย'],rightKnee:['K','เข่าขวา'],leftKnee:['K','เข่าซ้าย'],rightTip:['◆','ปลายอาวุธขวา'],leftTip:['◆','ปลายอาวุธซ้าย']};
+const rotationKey=id=>({right:'rightWrist',left:'leftWrist',rightTip:'rightWrist',leftTip:'leftWrist',hips:'hipRotation',torso:'body',neckRotation:'neckRotation'}[id]||(/Shoulder|Elbow|Knee/.test(id)?id:null));
+const movable=id=>['right','left','rightFoot','leftFoot','hips','torso','rightPole','leftPole'].includes(id);
+$('joint').innerHTML=Object.entries({...joints,rightPole:['','แนวงอศอกขวา'],leftPole:['','แนวงอศอกซ้าย']}).map(([id,[,name]])=>`<option value="${id}">${name}</option>`).join('');
 $('family').innerHTML=Object.entries(presets).map(([id,[label]])=>`<option value="${id}">${label}</option>`).join('');
 for(const [id,[text,name]]of Object.entries(joints)){
- const button=document.createElement('button');button.className='joint';button.dataset.joint=id;button.textContent=text;button.setAttribute('aria-label','ลาก'+name);button.title=name;
+ const button=document.createElement('button');button.className='joint'+(id.endsWith('Tip')?' tip':!movable(id)?' rotation':'');button.dataset.joint=id;button.textContent=text;button.setAttribute('aria-label',name);button.title=name;
+ button.onclick=()=>select(id);
  button.onpointerdown=e=>{
   if(e.button!==0)return;e.preventDefault();stopAnimation();select(id);
+  if(!movable(id)&&!id.endsWith('Tip'))return;
   const start=jointPoint(id),normal=new THREE.Vector3(0,0,1).applyQuaternion(figure.model.root.quaternion);
-  drag={id,pointer:e.pointerId,plane:new THREE.Plane().setFromNormalAndCoplanarPoint(normal,start),start,values:[...drafts[family][id]]};
+  if(!start)return;
+  drag={id,pointer:e.pointerId,plane:new THREE.Plane().setFromNormalAndCoplanarPoint(normal,start),start,values:[...(drafts[family][id]||[0,0,0])]};
   button.setPointerCapture(e.pointerId);
  };
  button.onpointermove=e=>{
   if(!drag||drag.pointer!==e.pointerId)return;
   const r=canvas.getBoundingClientRect(),ndc=new THREE.Vector2((e.clientX-r.left)/r.width*2-1,1-(e.clientY-r.top)/r.height*2);
   const ray=new THREE.Raycaster();ray.setFromCamera(ndc,figure.camera);const hit=ray.ray.intersectPlane(drag.plane,new THREE.Vector3());if(!hit)return;
+  if(id.endsWith('Tip')){Object.assign(drafts[family],aimWeapon(figure.model,id.replace('Tip',''),hit,drafts[family]));changed();fields();return;}
   const local=figure.model.root.worldToLocal(hit),start=figure.model.root.worldToLocal(drag.start.clone()),delta=local.sub(start);
   drafts[family][id]=cleanPose({[id]:drag.values.map((n,i)=>n+delta.getComponent(i))})[id];changed();fields();
  };
  const end=e=>{if(drag?.pointer===e.pointerId)drag=null;};button.onpointerup=end;button.onpointercancel=end;button.onlostpointercapture=end;
- button.onkeydown=e=>{const offset={ArrowLeft:[0,-.01],ArrowRight:[0,.01],ArrowUp:[1,.01],ArrowDown:[1,-.01]}[e.key];if(!offset)return;e.preventDefault();select(id);drafts[family][id][offset[0]]+=offset[1];drafts[family][id]=cleanPose({[id]:drafts[family][id]})[id];changed();fields();};
+ button.onkeydown=e=>{const offset={ArrowLeft:[0,-.01],ArrowRight:[0,.01],ArrowUp:[1,.01],ArrowDown:[1,-.01]}[e.key];if(!offset)return;e.preventDefault();select(id);if(!movable(id))return;drafts[family][id][offset[0]]+=offset[1];drafts[family][id]=cleanPose({[id]:drafts[family][id]})[id];changed();fields();};
  $('joints').append(button);
+}
+for(const ring of $('dials').querySelectorAll('.dial')){
+ let turn=null;
+ const pointerAngle=e=>{const r=$('dials').getBoundingClientRect();return Math.atan2(r.top+r.height/2-e.clientY,e.clientX-r.left-r.width/2);};
+ const rotate=value=>{
+  const key=rotationKey(selected),axis=Number(ring.dataset.axis);if(!key)return;
+  drafts[family][key][axis]=value;drafts[family][key]=cleanPose({[key]:drafts[family][key]})[key];changed();fields();
+ };
+ ring.onpointerdown=e=>{if(e.button!==0)return;e.preventDefault();stopAnimation();const key=rotationKey(selected);if(!key)return;turn={pointer:e.pointerId,angle:pointerAngle(e),value:drafts[family][key][Number(ring.dataset.axis)]};ring.setPointerCapture(e.pointerId);};
+ ring.onpointermove=e=>{if(turn?.pointer!==e.pointerId)return;const a=pointerAngle(e),delta=Math.atan2(Math.sin(a-turn.angle),Math.cos(a-turn.angle));turn.value+=delta;turn.angle=a;rotate(turn.value);turn.value=drafts[family][rotationKey(selected)][Number(ring.dataset.axis)];};
+ const end=()=>{turn=null;};ring.onpointerup=end;ring.onpointercancel=end;ring.onlostpointercapture=end;
+ ring.onkeydown=e=>{const sign={ArrowRight:1,ArrowUp:1,ArrowLeft:-1,ArrowDown:-1}[e.key];if(!sign&&e.key!=='Home')return;e.preventDefault();const key=rotationKey(selected);if(key)rotate(e.key==='Home'?0:drafts[family][key][Number(ring.dataset.axis)]+sign*(e.shiftKey?5:1)*Math.PI/180);};
 }
 function defaultPose(id){
  const p=STANCES[id];
- return structuredClone({...cleanPose(p),left:p.left||[.1,1,.2],leftRotation:p.leftRotation||[0,0,0],rightFoot:[-p.feet[0],.08,-p.feet[1]],leftFoot:[p.feet[0],.08,p.feet[1]],hips:p.hips||[0,0,0],body:p.body||[0,0,0],rightPole:[-.48,1.08,-.08],leftPole:[.48,1.08,-.08]});
+ return structuredClone({...Object.fromEntries(Object.entries(POSE_LIMITS).filter(([,b])=>Array.isArray(b[0])).map(([key])=>[key,[0,0,0]])),...cleanPose(p),left:p.left||[.1,1,.2],leftRotation:p.leftRotation||[0,0,0],rightFoot:[-p.feet[0],.08,-p.feet[1]],leftFoot:[p.feet[0],.08,p.feet[1]],hips:p.hips||[0,0,0],body:p.body||[0,0,0],rightPole:[-.48,1.08,-.08],leftPole:[.48,1.08,-.08]});
 }
 function jointPoint(id){
  const m=figure.model;
+ if(id.endsWith('Tip'))return weaponTip(m,id.replace('Tip',''));
+ if(id.endsWith('Pole'))return m.root.localToWorld(new THREE.Vector3(...drafts[family][id]));
+ if(id==='torso')return m.bones.chest.getWorldPosition(new THREE.Vector3());
+ if(id==='neckRotation')return m.bones.neck.getWorldPosition(new THREE.Vector3());
+ if(/Shoulder|Elbow|Knee/.test(id))return m.bones[id].getWorldPosition(new THREE.Vector3());
  if(id==='hips')return m.bones.hips.getWorldPosition(new THREE.Vector3());
  return (id.endsWith('Foot')?m.legs[id.replace('Foot','')].ankle:m.arms[id].grip).getWorldPosition(new THREE.Vector3());
 }
@@ -55,16 +80,28 @@ function render(time=0,action='idle'){
  canvas.style.width=drawWidth+'px';canvas.style.height=drawHeight+'px';canvas.style.left=(r.width-drawWidth)/2+'px';canvas.style.top=(r.height-drawHeight)/2+'px';
  let unreachable=false;
  for(const button of $('joints').children){
-  const id=button.dataset.joint,world=jointPoint(id),p=world.clone().project(figure.camera);
+  const id=button.dataset.joint,world=jointPoint(id);if(!world){button.hidden=true;continue;}const p=world.clone().project(figure.camera);
   button.style.left=((r.width-drawWidth)/2+(p.x+1)*drawWidth/2)+'px';button.style.top=((r.height-drawHeight)/2+(1-p.y)*drawHeight/2)+'px';button.hidden=!$('handles').checked||!!animation;button.setAttribute('aria-pressed',String(id===selected));
   if(id==='right'||id==='left'){const target=figure.model.root.localToWorld(new THREE.Vector3(...drafts[family][id]));unreachable ||= action==='idle'&&target.distanceTo(world)>.025;}
  }
- $('warning').textContent=unreachable?'จุดมือเกินระยะแขน — หุ่นจำกัดระยะไว้เพื่อไม่ให้แขนยืดผิดสัดส่วน':'ลากจุดบนหุ่น · ใช้แถบลึกเพื่อขยับเข้า–ออกจากตัว';
+ for(const option of $('joint').options)if(option.value.endsWith('Tip'))option.disabled=!jointPoint(option.value);
+ const key=rotationKey(selected),center=selected.endsWith('Tip')&&!jointPoint(selected)?null:jointPoint(selected.endsWith('Tip')?selected.replace('Tip',''):selected);
+ $('dials').hidden=!key||!center||!$('handles').checked||!!animation;
+ if(key&&center){
+  const p=center.project(figure.camera);$('dials').style.left=((r.width-drawWidth)/2+(p.x+1)*drawWidth/2)+'px';$('dials').style.top=((r.height-drawHeight)/2+(1-p.y)*drawHeight/2)+'px';
+  for(const ring of $('dials').querySelectorAll('.dial')){
+   const axis=Number(ring.dataset.axis),value=drafts[family][key][axis],radius=axis===2?82:59,dot=$(axis===2?'coronalDot':'sagittalDot');
+   dot.setAttribute('cx',100+radius*Math.cos(value));dot.setAttribute('cy',100-radius*Math.sin(value));
+   ring.setAttribute('aria-valuemin',Math.round(POSE_LIMITS[key][axis][0]*180/Math.PI));ring.setAttribute('aria-valuemax',Math.round(POSE_LIMITS[key][axis][1]*180/Math.PI));ring.setAttribute('aria-valuenow',Math.round(value*180/Math.PI));
+  }
+ }
+ const manual=Object.keys(drafts[family]).some(k=>/Shoulder|Elbow|Knee/.test(k)&&drafts[family][k].some(Math.abs));
+ $('warning').textContent=manual?'หมุนข้อโดยตรง: มือ/เท้าจะตามข้อ อาจยกจากจุดยึดเดิม · ค่าหมุนเป็นมุมเพิ่มจากท่าตั้งต้น':unreachable?'จุดมือเกินระยะแขน — หุ่นจำกัดระยะไว้เพื่อไม่ให้แขนยืดผิดสัดส่วน':'ลากจุดบนหุ่น · ใช้แถบลึกเพื่อขยับเข้า–ออกจากตัว';
 }
 function changed(){stopAnimation();dirty.add(family);$('status').textContent='แก้ไขแล้ว · ยังไม่ได้บันทึก';render();}
 function stopAnimation(){cancelAnimationFrame(animation);animation=0;}
 function field(container,label,key,index){
- const bounds=index===null?POSE_LIMITS[key]:POSE_LIMITS[key][index],value=index===null?drafts[family][key]:drafts[family][key][index],angular=['rotation','leftRotation','body','twist'].includes(key),factor=angular?180/Math.PI:1,step=angular?1:.01;
+ const bounds=index===null?POSE_LIMITS[key]:POSE_LIMITS[key][index],value=index===null?drafts[family][key]:drafts[family][key][index],angular=['rotation','leftRotation','body','twist'].includes(key)||/Rotation|Shoulder|Elbow|Knee|Wrist/.test(key),factor=angular?180/Math.PI:1,step=angular?1:.01;
  const row=document.createElement('label');row.className='field';row.innerHTML=`<span>${label}${angular?' (°)':''}</span><input type="range" min="${bounds[0]*factor}" max="${bounds[1]*factor}" step="${step}" value="${value*factor}" aria-label="${label}"><input type="number" min="${bounds[0]*factor}" max="${bounds[1]*factor}" step="${step}" value="${(value*factor).toFixed(angular?0:2)}" aria-label="${label} ตัวเลข">`;
  const inputs=row.querySelectorAll('input');for(const input of inputs)input.oninput=()=>{
   if(input.value===''||!Number.isFinite(Number(input.value)))return;
@@ -73,9 +110,10 @@ function field(container,label,key,index){
  };container.append(row);
 }
 function fields(){
- $('positionFields').replaceChildren();['ซ้าย–ขวา','สูง–ต่ำ','ลึกเข้า–ออก'].forEach((name,i)=>field($('positionFields'),name,selected,i));
- $('weaponFields').hidden=!['right','left'].includes(selected);$('rotationFields').replaceChildren();
- if(!$('weaponFields').hidden)['ก้ม / เงย','บิดข้อมือ','เอียงอาวุธ'].forEach((name,i)=>field($('rotationFields'),name,selected==='right'?'rotation':'leftRotation',i));
+ $('positionFields').replaceChildren();if(movable(selected))['ซ้าย–ขวา','สูง–ต่ำ','ลึกเข้า–ออก'].forEach((name,i)=>field($('positionFields'),name,selected,i));
+ const key=rotationKey(selected);$('weaponFields').hidden=!key;$('rotationFields').replaceChildren();$('rotationHint').hidden=!key;
+ $('weaponFields').querySelector('h2').textContent='หมุน '+(joints[selected]?.[1]||'ข้อ');
+ if(key)['Sagittal งอ/เหยียด','บิดตามแกน','Coronal เอียง'].forEach((name,i)=>field($('rotationFields'),name,key,i));
  $('bodyFields').replaceChildren();field($('bodyFields'),'โน้มลำตัว','body',0);field($('bodyFields'),'เอียงไหล่','body',2);field($('bodyFields'),'บิดอก','twist',null);field($('bodyFields'),'ย่อตัว','lower',null);
 }
 function select(id){selected=id;$('joint').value=id;fields();render();}

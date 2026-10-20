@@ -2,8 +2,63 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Vector3,Quaternion} from './vendor/three.module.js';
 import {ITEMS,newSave} from './core.mjs';
-import {CharacterRig,STANCES,stanceFor} from './equipment-rig.mjs';
+import {CharacterRig,STANCES,stanceFor,weaponTip,aimWeapon} from './equipment-rig.mjs';
 import {cleanPose,readPoses,writePose} from './pose-settings.mjs';
+
+test('joint rotations persist and move connected limbs, neck and fitted equipment',()=>{
+ const model=new CharacterRig(),save=newSave(),custom={torso:[.02,.03,0],hipRotation:[.12,0,.08],neckRotation:[.2,0,.1],rightShoulder:[.3,0,.2],leftShoulder:[-.2,0,.1],rightElbow:[.25,0,.1],leftElbow:[.2,0,-.1],rightKnee:[.3,0,.08],leftKnee:[.2,0,-.08],rightWrist:[.2,0,.3],leftWrist:[-.2,0,.1]};
+ const data=new Map(),storage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)};
+ writePose(storage,'swords',custom);assert.deepEqual(readPoses(storage).swords,custom);
+ save.equipment.weapon='iron-sword';save.equipment.offhand='rust-sword';model.equip(save);
+ try{
+  model.pose({angle:0,reducedMotion:true});const before={};
+  for(const name of ['rightShoulder','leftShoulder','rightElbow','leftElbow','rightKnee','leftKnee','rightWrist','leftWrist','neck'])before[name]=model.bones[name].quaternion.clone();
+  model.pose({angle:0,reducedMotion:true,posture:custom});
+  for(const name of Object.keys(before))assert.ok(before[name].angleTo(model.bones[name].quaternion)>.02,name+' must rotate');
+  assert.ok(Math.abs(model.bones.spine.position.x-.02)<1e-6);
+  assert.ok(Math.abs(model.bones.hips.rotation.z-.08)<1e-6);
+  assert.equal(model.equipment.weapon.parent,model.arms.right.grip);
+  assert.equal(model.equipment.offhand.parent,model.arms.left.grip);
+  for(const side of ['left','right']){
+   const a=model.arms[side],l=model.legs[side],p=b=>b.getWorldPosition(new Vector3());
+   assert.ok(Math.abs(p(a.shoulder).distanceTo(p(a.elbow))-.29)<1e-6);
+   assert.ok(Math.abs(p(a.elbow).distanceTo(p(a.wrist))-.255)<1e-6);
+   assert.ok(Math.abs(p(l.knee).distanceTo(p(l.ankle))-.39)<1e-6);
+  }
+ }finally{model.destroy();}
+});
+
+test('tip aiming rotates the actual weapon with the wrist, including staff and mirrored mixed hands',()=>{
+ const model=new CharacterRig(),save=newSave();
+ try{
+  for(const [weapon,offhand,side]of [['iron-sword','mace','right'],['mace','iron-sword','left'],['ember-staff',null,'left']]){
+   save.equipment.weapon=weapon;save.equipment.offhand=offhand;model.equip(save);
+   let posture={rightShoulder:[.1,0,.1],leftElbow:[.12,0,0]};
+   model.pose({angle:.45,reducedMotion:true,posture});
+   const origin=model.arms[side].wrist.getWorldPosition(new Vector3()),target=origin.clone().add(new Vector3(.3,.45,.2));
+   posture={...posture,...aimWeapon(model,side,target,posture)};
+   model.pose({angle:.45,reducedMotion:true,posture});
+   const direction=weaponTip(model,side).sub(origin).normalize();
+   assert.ok(direction.dot(target.sub(origin).normalize())>.999,'tip must follow target direction');
+  }
+  assert.deepEqual(aimWeapon(model,'right',new Vector3(),{}),{},'free casting hand has no tip');
+ }finally{model.destroy();}
+});
+
+test('custom joints still join the greatsword support grip during contact and return smoothly',()=>{
+ const model=new CharacterRig(),save=newSave();save.equipment.weapon='greatsword';save.equipment.offhand=null;model.equip(save);
+ const posture={rightWrist:[.15,.1,.2],rightShoulder:[.08,0,.05],leftElbow:[.1,0,0]};
+ try{
+  model.pose({angle:0,action:'slash',time:275,reducedMotion:true,posture});
+  const target=model.arms.right.grip.localToWorld(new Vector3(0,-.15,0)),support=model.arms.left.grip.getWorldPosition(new Vector3());
+  assert.ok(target.distanceTo(support)<.002,'support palm must remain on the rotated hilt');
+  let previous;
+  for(let time=0;time<=550;time+=10){
+   model.pose({angle:0,action:'slash',time,reducedMotion:true,posture});
+   const p=model.arms.left.grip.getWorldPosition(new Vector3());if(previous)assert.ok(p.distanceTo(previous)<.07);previous=p;
+  }
+ }finally{model.destroy();}
+});
 
 test('inventory face is modeled on the head and uses the same material language as the body',()=>{
  const model=new CharacterRig();

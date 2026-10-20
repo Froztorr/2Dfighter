@@ -5,16 +5,22 @@
 <main>
  <section class="figurePanel">
   <div class="stageTop"><span id="stanceName"></span><label><input type="checkbox" id="handles" checked> จุดลาก</label></div>
-  <div id="stage" aria-label="หุ่นจัดท่า"><canvas id="figure" width="480" height="800"></canvas><div id="joints"></div></div>
+  <div id="stage" aria-label="หุ่นจัดท่า"><canvas id="figure" width="480" height="800"></canvas><div id="joints"></div>
+   <svg id="dials" width="200" height="200" viewBox="0 0 200 200" aria-label="วงหมุนข้อต่อ">
+    <circle class="dial coronal" data-axis="2" cx="100" cy="100" r="82" tabindex="0" role="slider" aria-label="Coronal เอียงซ้ายขวา"/><circle id="coronalDot" class="dialDot coronal" r="7"/>
+    <circle class="dial sagittal" data-axis="0" cx="100" cy="100" r="59" tabindex="0" role="slider" aria-label="Sagittal งอเหยียด"/><circle id="sagittalDot" class="dialDot sagittal" r="7"/>
+   </svg>
+  </div>
   <div class="viewControls"><label>มุมมอง <input id="view" type="range" min="-.7" max=".7" step=".01" value=".35"></label><button id="cut">ลองออกท่า</button></div>
   <p id="warning" role="status"></p>
  </section>
  <section class="controls">
   <small>01 / เลือกท่า</small><label class="wide">ชุดอาวุธ<select id="family"></select></label>
-  <p class="hint">ลากจุดมือ เท้า หรือสะโพกบนตัวหุ่น เสื้อผ้าและอาวุธจะตามข้อต่อเดิม เลือกจุดแล้วใช้ปุ่มลูกศรขยับได้ด้วย</p>
+  <p class="hint">ลากมือ เท้า ลำตัว หรือสะโพกเพื่อย้ายตำแหน่ง · ลาก ◆ ที่ปลายอาวุธเพื่อเปลี่ยนทิศ · เลือกข้อแล้วลากวงหมุน หรือใช้ปุ่มลูกศรบนวง</p>
   <details><summary>อุปกรณ์ที่ใช้ลอง</summary><div id="equipment"></div><p class="hint">ใช้ชุดที่ใส่อยู่ในเกมได้ อุปกรณ์ทดลองไม่เปลี่ยนของหรือเงินในเซฟ</p><button id="currentOutfit">ใช้เสื้อผ้าในเกม</button></details>
   <div class="divider"></div><small>02 / จัดแนวร่างกาย</small>
-  <label class="wide">จุดที่เลือก<select id="joint"><option value="right">มือขวา</option><option value="left">มือซ้าย</option><option value="rightFoot">เท้าขวา</option><option value="leftFoot">เท้าซ้าย</option><option value="hips">สะโพก</option><option value="rightPole">แนวงอศอกขวา</option><option value="leftPole">แนวงอศอกซ้าย</option></select></label>
+  <label class="wide">จุดที่เลือก<select id="joint"></select></label>
+  <p id="rotationHint" class="hint"><span class="coronalText">วงนอก Coronal — เอียงซ้าย/ขวา</span><br><span class="sagittalText">วงใน Sagittal — งอ/เหยียด</span><br>วงหมุนแสดงเป็นแป้นหน้าจอ หมุนเทียบแกนเฉพาะข้อนั้น</p>
   <div id="positionFields"></div>
   <div id="weaponFields"><h2>องศาอาวุธ / ข้อมือ</h2><div id="rotationFields"></div></div>
   <details open><summary>ถ่ายน้ำหนักและลำตัว</summary><div id="bodyFields"></div></details>
