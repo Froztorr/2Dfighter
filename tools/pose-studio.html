@@ -30,5 +30,13 @@
   <p class="hint">บันทึก A และ B แยกตามประเภทท่า ใช้กับทุกชุดของท่านั้นในหน้าอุปกรณ์ บันทึกเฉพาะเบราว์เซอร์นี้</p>
   <div class="actions"><button id="apply">บันทึกท่านี้ในเกม</button><button id="reset">คืนท่าตั้งต้น</button></div>
   <p id="status" role="status" aria-live="polite">ยังไม่มีการแก้ไข</p>
+  <div class="divider"></div><small>04 / ส่งท่าออก</small>
+  <p class="hint">Export เฉพาะท่าที่กดบันทึกแล้วทุกชุดอาวุธ รวม A/B ไม่รวมเซฟเกม · คัดลอกไปวางในแชตหรือดาวน์โหลดเก็บเป็นไฟล์ได้</p>
+  <button id="exportPoses">Export ท่าที่บันทึกทั้งหมด</button>
+  <div id="exportPanel" hidden>
+   <label class="wide">JSON สำหรับส่งต่อ<textarea id="exportText" rows="10" readonly spellcheck="false"></textarea></label>
+   <div class="actions"><button id="copyPoses">คัดลอก JSON</button><button id="downloadPoses">ดาวน์โหลด .json</button></div>
+  </div>
+  <p id="exportStatus" role="status" aria-live="polite"></p>
  </section>
 </main><script type="module" src="pose-studio.mjs"></script></body></html>

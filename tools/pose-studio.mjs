@@ -1,7 +1,7 @@
 import * as THREE from '../vendor/three.module.js';
 import {RiggedEquipmentFigure,STANCES,weaponTip,aimWeapon} from '../equipment-rig.mjs';
 import {ITEMS,SLOTS,newSave,loadSave} from '../core.mjs';
-import {POSE_LIMITS,cleanPose,readPoses,writePose} from '../pose-settings.mjs';
+import {POSE_LIMITS,cleanPose,readPoses,writePose,exportPoses} from '../pose-settings.mjs';
 
 const $=id=>document.getElementById(id),presets={
  greatsword:['Greatsword · ดาบใหญ่','greatsword',null],
@@ -143,6 +143,23 @@ $('clearAttack').onclick=()=>{delete drafts[family].attack;frame='A';fields();ch
 $('reset').onclick=()=>{frame='A';drafts[family]=defaultPose(family);fields();changed();try{writePose(storage,family,null);delete saved[family];dirty.delete(family);$('status').textContent='คืนท่าตั้งต้นแล้ว — ลบเฉพาะท่าที่บันทึกของประเภทนี้';}catch{$('status').textContent='คืนท่าบนหุ่นแล้ว แต่ลบท่าที่บันทึกไม่สำเร็จ';}};
 $('apply').onclick=()=>{try{writePose(storage,family,drafts[family]);saved[family]=cleanPose(drafts[family]);dirty.delete(family);$('status').textContent='บันทึกแล้ว — กลับเกมแล้วเปิดหน้าอุปกรณ์เพื่อใช้ท่านี้';}catch{$('status').textContent='บันทึกไม่สำเร็จ: เบราว์เซอร์ไม่อนุญาตหรือพื้นที่เต็ม ท่าที่แก้ยังอยู่ในหน้านี้';}};
 $('cut').onclick=()=>{stopAnimation();frame='A';fields();animationStart=performance.now();const tick=now=>{const elapsed=now-animationStart;if(elapsed>=550){animation=0;render();return;}animation=requestAnimationFrame(tick);render(elapsed,'slash');};animation=requestAnimationFrame(tick);};
+function prepareExport(){
+ const text=exportPoses(storage),count=Object.keys(JSON.parse(text).poses).length;
+ $('exportText').value=text;$('exportPanel').hidden=!count;
+ $('exportStatus').textContent=count?`ส่งออก ${count} ชุดอาวุธที่บันทึกแล้ว${dirty.size?' — มีท่าที่ยังไม่ได้บันทึก จึงไม่รวมการแก้ล่าสุด':''}`:'ยังไม่พบท่าที่บันทึกไว้ — กดบันทึกท่าก่อน Export';
+ return count?text:null;
+}
+$('exportPoses').onclick=prepareExport;
+$('copyPoses').onclick=async()=>{
+ const text=prepareExport();if(!text)return;
+ try{await navigator.clipboard.writeText(text);$('exportStatus').textContent+=' · คัดลอกแล้ว วางในแชตได้เลย';}
+ catch{$('exportText').focus();$('exportText').select();$('exportStatus').textContent+=' · คัดลอกอัตโนมัติไม่ได้ เลือกข้อความให้แล้ว ใช้ Ctrl+C หรือเมนูคัดลอก';}
+};
+$('downloadPoses').onclick=()=>{
+ const text=prepareExport();if(!text)return;
+ const url=URL.createObjectURL(new Blob([text],{type:'application/json'})),link=document.createElement('a');
+ link.href=url;link.download='emberblade-poses.json';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
 new ResizeObserver(()=>render()).observe($('stage'));
 window.addEventListener('pagehide',e=>{stopAnimation();if(!e.persisted)figure.destroy();});
 window.addEventListener('pageshow',e=>{if(e.persisted)render();});

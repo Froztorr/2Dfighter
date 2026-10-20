@@ -33,3 +33,6 @@ export function writePose(storage,family,value){
  const poses=readPoses(storage);if(value===null)delete poses[family];else poses[family]=cleanPose(value);
  storage.setItem(POSE_KEY,JSON.stringify(poses));
 }
+export function exportPoses(storage){
+ return JSON.stringify({format:'emberblade-poses',version:1,angleUnit:'radians',poses:readPoses(storage)},null,2);
+}
