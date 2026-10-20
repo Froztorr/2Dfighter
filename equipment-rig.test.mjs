@@ -4,6 +4,33 @@ import {Vector3,Quaternion} from './vendor/three.module.js';
 import {ITEMS,newSave} from './core.mjs';
 import {CharacterRig,STANCES,stanceFor,weaponTip,aimWeapon,blendPostures} from './equipment-rig.mjs';
 import {cleanPose,readPoses,writePose,exportPoses} from './pose-settings.mjs';
+import {AUTHORED_POSES} from './authored-poses.mjs';
+
+test('bundled user poses validate unchanged and preserve A/B endpoints and limb lengths',()=>{
+ assert.deepEqual(Object.keys(AUTHORED_POSES).sort(),['dual','greatsword','mixed','shield','single','staff','swords']);
+ assert.equal(Object.values(AUTHORED_POSES).filter(p=>p.attack).length,6);
+ const equipment={staff:['ember-staff',null],greatsword:['greatsword',null],mixed:['iron-sword','mace'],swords:['iron-sword','rust-sword'],dual:['venom-dagger','mace'],shield:['iron-sword','steel-shield'],single:['iron-sword',null]};
+ const model=new CharacterRig(),save=newSave(),point=b=>b.getWorldPosition(new Vector3());
+ try{
+  for(const [family,posture]of Object.entries(AUTHORED_POSES)){
+   assert.deepEqual(cleanPose(posture),posture,family+' must not be clamped or lose fields');
+   [save.equipment.weapon,save.equipment.offhand]=equipment[family];model.equip(save);
+   if(posture.attack){
+    model.pose({angle:0,reducedMotion:true,posture:posture.attack});const expected=Object.values(model.bones).map(point);
+    model.pose({angle:0,reducedMotion:true,action:'slash',time:275,posture});
+    Object.values(model.bones).forEach((bone,i)=>assert.ok(point(bone).distanceTo(expected[i])<1e-5,family+' B must remain exact'));
+   }
+   for(let time=0;time<=550;time+=25){
+    model.pose({action:'slash',time,reducedMotion:true,posture});
+    for(const arm of Object.values(model.arms)){
+     assert.ok(Math.abs(point(arm.shoulder).distanceTo(point(arm.elbow))-.29)<1e-6);
+     assert.ok(Math.abs(point(arm.elbow).distanceTo(point(arm.wrist))-.255)<1e-6);
+    }
+    for(const bone of Object.values(model.bones))assert.ok(bone.matrixWorld.elements.every(Number.isFinite));
+   }
+  }
+ }finally{model.destroy();}
+});
 
 test('export contains all saved A/B poses and excludes progression and unsaved or unknown data',()=>{
  const data=new Map(),storage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)};

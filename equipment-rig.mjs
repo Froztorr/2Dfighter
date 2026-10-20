@@ -3,6 +3,7 @@ import {ITEMS} from './core.mjs';
 import {organicLimb,sculptedHand} from './player-sculpt.mjs';
 import {solveArm} from './player-rig.mjs';
 import {makeWeapon,makeShield,combatWebGLRenderer,WEAPON_STYLES} from './player-3d.mjs';
+import {AUTHORED_POSES} from './authored-poses.mjs';
 import {cleanPose,POSE_LIMITS} from './pose-settings.mjs';
 
 const clamp=THREE.MathUtils.clamp;
@@ -368,7 +369,7 @@ export class RiggedEquipmentFigure {
   this.canvas=document.createElement('canvas');this.canvas.width=480;this.canvas.height=800;this.context=this.canvas.getContext('2d');this.pixels=document.createElement('canvas');this.pixels.width=240;this.pixels.height=400;this.pixelContext=this.pixels.getContext('2d',{willReadFrequently:true});
   const floor=mesh(this.scene,new THREE.CircleGeometry(.36,48),new THREE.MeshBasicMaterial({color:0x0d1413,transparent:true,opacity:.5}),[0,.007,0]);floor.rotation.x=-Math.PI/2;
  }
- sync(save,state={}){this.model.equip(save);this.model.pose({...state,posture:state.posture??state.poses?.[stanceFor(save.equipment)]});this.renderer.render(this.scene,this.camera);this.context.clearRect(0,0,480,800);this.pixelContext.imageSmoothingEnabled=false;this.pixelContext.clearRect(0,0,240,400);this.pixelContext.drawImage(this.renderer.domElement,0,0,240,400);
+ sync(save,state={}){this.model.equip(save);this.model.pose({...state,posture:state.posture??state.poses?.[stanceFor(save.equipment)]??AUTHORED_POSES[stanceFor(save.equipment)]});this.renderer.render(this.scene,this.camera);this.context.clearRect(0,0,480,800);this.pixelContext.imageSmoothingEnabled=false;this.pixelContext.clearRect(0,0,240,400);this.pixelContext.drawImage(this.renderer.domElement,0,0,240,400);
   const frame=this.pixelContext.getImageData(0,0,240,400),data=frame.data;for(let i=0;i<data.length;i+=4){if(data[i+3]<120){data[i+3]=0;continue;}data[i+3]=255;for(let c=0;c<3;c++)data[i+c]=Math.min(255,Math.round(data[i+c]/8)*8);}this.pixelContext.putImageData(frame,0,0);this.context.imageSmoothingEnabled=false;this.context.drawImage(this.pixels,0,0,480,800);}
  destroy(){this.model.destroy();release(this.scene);this.canvas.width=this.canvas.height=0;this.renderer.renderLists.dispose();}
 }
