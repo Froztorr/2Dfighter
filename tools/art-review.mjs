@@ -1,11 +1,11 @@
 import {newSave,ITEMS,SLOTS} from '../core.mjs';
 import {ENEMY_ATLAS} from '../enemy-atlas.mjs';
 import {enemyFrame,enemyArtPose,paintEnemyFrame} from '../enemy-animation.mjs';
-import {RiggedEquipmentFigure} from '../equipment-rig.mjs';
-import {PORTRAIT_FILES,itemIconData} from '../equipment-art.mjs';
+import {RiggedEquipmentFigure,rigItemIcon} from '../equipment-rig.mjs';
+import {PORTRAIT_FILES} from '../equipment-art.mjs';
 import {Player3D} from '../player-3d.mjs';
 const $=id=>document.getElementById(id),save=newSave(),sprites={};
-$('action').parentElement.insertAdjacentHTML('afterend','<label>Turn (radians)<input id="angle" type="number" min="-0.7" max="0.7" step="0.1" value="0.08"></label>');
+$('action').parentElement.insertAdjacentHTML('afterend','<label>Turn (radians)<input id="angle" type="number" min="-0.7" max="0.7" step="0.1" value="0.55"></label>');
 $('outfitGallery').previousElementSibling.textContent='One skeleton · interchangeable meshes · mixed builds';
 $('dollCheck').previousElementSibling.textContent='Shared rig and slot replacement';$('capeBack').parentElement.remove();
 $('gear').parentElement.insertAdjacentHTML('afterend','<button id="checkFits">Check all equipment fits</button><p id="fitReport" role="status"></p>');
@@ -64,10 +64,11 @@ $('checkFits').onclick=()=>{
    if(solid<1000||edge>0)failures.push(id+' invisible / clipped ('+edge+')');count++;
   }
  }
- $('fitReport').textContent=failures.length?'FAIL · '+failures.join(' · '):`PASS · ${Object.keys(ITEMS).length} items × idle / slash = ${count} renders · finite skinning · no clipped silhouette`;
+ for(const id of Object.keys(ITEMS))if(!rigItemIcon(id).startsWith('data:image/png'))failures.push(id+' missing fitted icon');
+ $('fitReport').textContent=failures.length?'FAIL · '+failures.join(' · '):`PASS · ${Object.keys(ITEMS).length} items × idle / slash = ${count} renders · 47 fitted icons · finite skinning · no clipped silhouette`;
  render();
 };
 function loop(now){if(playing&&now-previous>32){$('time').value=(Number($('time').value)+now-previous)%1800;render();previous=now;}else if(!playing)previous=now;requestAnimationFrame(loop);}
-$('outfitGallery').innerHTML=Object.entries(presets).map(([id,gear])=>`<figure style="margin:0"><h3>${id==='regression'?'Reported outfit':id}</h3><canvas id="look-${id}" width="256" height="426"></canvas><div>${Object.values(gear).filter(Boolean).map(item=>`<img alt="${ITEMS[item].name}" title="${ITEMS[item].name}" src="${itemIconData(sprites,item)}" width="25" height="25" style="object-fit:contain;image-rendering:pixelated">`).join('')}</div></figure>`).join('');
+$('outfitGallery').innerHTML=Object.entries(presets).map(([id,gear])=>`<figure style="margin:0"><h3>${id==='regression'?'Reported outfit':id}</h3><canvas id="look-${id}" width="256" height="426"></canvas><div>${Object.values(gear).filter(Boolean).map(item=>`<img alt="${ITEMS[item].name}" title="${ITEMS[item].name}" src="${rigItemIcon(item)}" width="25" height="25" style="object-fit:contain;image-rendering:pixelated">`).join('')}</div></figure>`).join('');
 for(const [id,equipment]of Object.entries(presets)){const figure=new RiggedEquipmentFigure(sprites);figure.sync({...newSave(),equipment:{...newSave().equipment,...equipment}},{reducedMotion:true});$(`look-${id}`).getContext('2d').drawImage(figure.canvas,0,0,256,426);figure.destroy();}
 outfit();requestAnimationFrame(loop);

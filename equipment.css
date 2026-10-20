@@ -1,0 +1,56 @@
+/* Equipment follows the supplied 404 × 720 portrait reference. */
+#panel[data-equipment=true]{padding:0;background:#2b323e}
+#panel[data-equipment=true]>.sheet{width:100%;max-width:none;height:100%;max-height:none;padding:0;border:0;border-radius:0;box-shadow:none;background:#2b323e;overflow:hidden}
+#panel[data-equipment=true]>.sheet>:is(h1,.close,.statline,.tabs,.returnHall,#nextFloor){display:none}
+#panel[data-equipment=true] #panelBody{height:100%}
+.equipmentScreen{height:100%;display:flex;flex-direction:column;color:#cfd1d4;font:14px Georgia,serif;background:repeating-linear-gradient(0deg,#ffffff01 0 2px,transparent 2px 4px),#2b323e;padding:env(safe-area-inset-top) 12px env(safe-area-inset-bottom);overflow:hidden}
+.equipmentScreen button{background:none;color:inherit;box-shadow:none;font:inherit}
+.equipmentHeader{display:grid;grid-template-columns:44px 1fr 54px;align-items:center;min-height:60px;text-align:center;flex-shrink:0}
+.equipmentHeader button{min-height:44px;font:24px Arial}
+.equipmentHeader h2{font:18px Georgia,serif;margin:0;color:#e2e0e1}
+.equipmentHeader p{margin:4px 0 0;color:#8f939c;font-size:14px}
+.equipmentHeader .equipmentDone{font:700 10px Arial,sans-serif;color:#56baa1;letter-spacing:.4px}
+.overview .equipmentHeader{min-height:94px;padding-top:14px}
+.overview .equipmentHeader>button{align-self:start}
+.equipmentStage{position:relative;display:flex;justify-content:space-between;flex:1;min-height:0}
+.equipmentFigure{position:absolute;inset:0;display:flex;justify-content:center;align-items:center;pointer-events:none}
+.equipmentFigure::before{content:'';position:absolute;width:60%;height:70%;max-height:270px;bottom:8%;background:radial-gradient(ellipse,#318c8466,transparent 68%);pointer-events:none}
+#panel .equipmentFigure #heroPreview{position:relative;z-index:0;width:auto;height:min(100%,300px);max-width:100%;margin:0;image-rendering:pixelated;object-fit:contain;pointer-events:none}
+.equipmentRail{position:relative;z-index:1;display:flex;flex-direction:column;gap:14px;align-self:flex-start;margin:8px 0 0}
+.equipmentSlot{width:54px;height:56px;border:1px solid #737c8d!important;border-radius:5px;background:#505a6c!important;box-shadow:inset 0 0 0 1px #ffffff12!important;display:grid;place-items:center;padding:4px!important}
+.equipmentSlot:disabled{opacity:.35;cursor:default}
+.equipmentSlot svg{width:26px;height:28px;fill:#8991a0;opacity:.55}
+.equipmentSlot .itemArt{width:36px;height:38px;object-fit:contain;image-rendering:pixelated}
+.equipmentSlot .gearIcon{width:36px;height:36px}
+.equipmentBelt{display:flex;justify-content:center;gap:12px;margin:20px 0 12px}
+.equipmentBelt .equipmentSlot{width:52px;height:54px}
+.equipmentBelt .equipmentSlot:is([data-slot=weapon],[data-slot=offhand]){width:68px;height:70px}
+.equipmentVitals{display:flex;justify-content:center;gap:15px;font:10px Arial;color:#929ba7;margin:6px 0 18px;letter-spacing:.4px}
+.equipmentNav{display:flex;justify-content:space-around;border-top:1px solid #ffffff0b;padding:10px 0}
+.equipmentNav button{min-height:44px;font:12px Arial;color:#9da7b4}
+.figureTurn{display:flex;justify-content:center;gap:20px;height:32px;flex-shrink:0}
+.figureTurn button{width:44px;min-height:32px;font-size:17px;color:#87959e}
+.equipmentViews{display:flex;flex-shrink:0;height:44px;gap:18px;border-bottom:1px solid #ffffff0b}
+.equipmentViews button{padding:0 4px;min-width:52px;font:13px Arial;color:#91949f;border-bottom:2px solid transparent}
+.equipmentViews .active{color:#e4e5e7;border-color:#cfd8d6}
+.picker .equipmentStage{flex:1;min-height:165px}
+.picker .equipmentFigure::before{display:none}
+#panel .picker .equipmentFigure #heroPreview{height:min(100%,280px)}
+.equipmentSelection{display:flex;justify-content:space-between;align-items:center;min-height:34px;flex-shrink:0;font:12px Arial;color:#c8ccd2;padding:0 2px 10px}
+.equipmentSelection small{color:#85929d;font-size:11px}
+.equipmentGrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;max-height:35%;min-height:64px;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;padding:2px 2px 6px;scrollbar-width:thin;scrollbar-color:#6b7583 transparent;flex-shrink:0;align-content:start}
+.equipmentTile{display:grid;place-items:center;position:relative;aspect-ratio:1;min-width:0;border:1px solid #7e8795!important;background:#505a6c!important;padding:4px!important;border-radius:0}
+.equipmentTile.equipped{border:2px solid #63c8b0!important;box-shadow:inset 0 0 0 1px #63c8b080!important;background:#4c6368!important;padding:3px!important}
+.equipmentTile:disabled{opacity:.42;cursor:default}
+.equipmentTile .itemArt{width:100%;height:100%;min-height:0;object-fit:contain;image-rendering:pixelated}
+.equipmentTile .gearIcon{width:100%;height:100%}
+.equipmentTile .tileLock{position:absolute;right:3px;bottom:1px;font:12px Arial;color:#d4dee2}
+.unequipTile svg{width:28px;height:28px;fill:#929dab;opacity:.45}
+.unequipTile span{font:9px Arial;color:#b0b7c2}
+.equipmentPickerFoot{display:flex;justify-content:space-between;align-items:center;height:42px;flex-shrink:0;font:10px Arial;color:#939ba7}
+.equipmentPickerFoot button{min-height:40px;color:#62bca7;font:12px Arial}
+.equipmentDescription{height:35%;overflow:auto;flex-shrink:0;touch-action:pan-y;font:14px/1.7 Arial;padding:0 8px 14px;color:#adb7c2}
+.equipmentDescription h3{font:18px Georgia;color:#e0e4e7;margin:10px 0}
+.equipmentDescription button{color:#64c2aa;min-height:44px}
+.equipmentDescription details{border-top:1px solid #59616b;padding:10px 0}
+@media(max-height:680px){.overview .equipmentHeader{min-height:76px}.equipmentRail{gap:9px}.equipmentBelt{margin-top:12px}.equipmentNav{padding:0}.equipmentVitals{margin-bottom:12px}.equipmentHeader{min-height:52px}.equipmentViews{height:38px}.equipmentSelection{font-size:11px}}

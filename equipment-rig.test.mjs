@@ -4,6 +4,17 @@ import {Vector3} from './vendor/three.module.js';
 import {ITEMS,newSave} from './core.mjs';
 import {CharacterRig} from './equipment-rig.mjs';
 
+test('inventory face is modeled on the head and uses the same material language as the body',()=>{
+ const model=new CharacterRig();
+ try{
+  const face=model.bones.head.children.find(o=>o.name==='face-features');
+  assert.ok(face,'face must have physical features, not a portrait crop stretched over a sphere');
+  assert.ok(face.children.length>=6);
+  assert.ok(!model.faceTexture);
+  const cloth=model.material('rogue-pants',0x60452f,'leather');assert.ok(cloth.map.isDataTexture,'garments use a tailored weave, not an illustration crop');assert.equal(cloth.map.image.width,32);cloth.dispose();
+ }finally{model.destroy();}
+});
+
 test('all equipment uses one skeleton and replaces covered body segments',()=>{
  const model=new CharacterRig(),save=newSave();
  try{
@@ -54,5 +65,17 @@ test('continuous garment vertices deform at elbows rather than splitting into pi
  try{
   const sleeve=model.equipment.armor.children.find(m=>m.isSkinnedMesh&&m.geometry.getAttribute('skinIndex').array.includes(model.skeleton.bones.indexOf(model.bones.rightElbow)));
   assert.ok(sleeve);const p=sleeve.geometry.attributes.position,index=Math.floor(p.count*.8),before=new Vector3().fromBufferAttribute(p,index);model.pose({time:0,reducedMotion:true});const a=sleeve.applyBoneTransform(index,before.clone());model.pose({action:'slash',time:270});const b=sleeve.applyBoneTransform(index,before.clone());assert.ok(a.distanceTo(b)>.1);
+ }finally{model.destroy();}
+});
+
+test('mixed outfit accessories sit over the worn chest and capes wrap in front and behind',()=>{
+ const model=new CharacterRig(),save=newSave();save.equipment.neck='sun-necklace';save.equipment.cloak='forest-cloak';
+ try{
+  save.equipment.armor='leather-vest';model.equip(save);const cloth=model.equipment.neck.userData.attached[0].children.at(-1).position.z;
+  save.equipment.armor='scale-mail';model.equip(save);const plate=model.equipment.neck.userData.attached[0].children.at(-1).position.z;
+  assert.ok(plate>cloth+.04,'pendant must clear the breastplate instead of being buried in it');
+  const cape=model.equipment.cloak,back=cape.children.find(m=>m.isSkinnedMesh);back.geometry.computeBoundingBox();assert.ok(back.geometry.boundingBox.max.z<0);
+  const front=cape.userData.attached[0];assert.ok(front.children.some(m=>m.position.z>.09),'front shoulder cloth must wrap over the body');
+  assert.equal(model.base.torso.visible,false);assert.equal(model.base.arms.visible,false);
  }finally{model.destroy();}
 });

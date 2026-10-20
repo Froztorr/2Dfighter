@@ -1,3 +1,4 @@
+import { equipmentScreen } from './equipment-ui.mjs';
 import { ENEMY_ATLAS } from './enemy-atlas.mjs';
 import { enemyFrame, enemyArtPose } from './enemy-animation.mjs';
 import { playerAssets } from './fps-player.mjs';
@@ -23,7 +24,7 @@ let floor = 1, room = 0, hp = stats(save).maxHp, enemy, phase = 'home', paused =
 let time = 0, last = performance.now(), attack = null, nextAttack = 1800, stunned = 0, nextSlash = 0, nextDodge = 0;
 let trail = [], pointer = null, pointerSlashed=false, effects = [], flash = 0, dodge = null, shield = 0, cooldown = {}, transition = 0;
 let stamina=100, blocking=false, guardPointer=null, guardKey=false, playerStunned=0, stunStarted=0, deathPanelAt=0, victoryAt=0, regenAt=0, attackCount=0;
-let selectedSlot='weapon', rewardUntil=0, run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:100};
+let selectedSlot=null, gearView='visual', rewardUntil=0, run={gold:0,xp:0,items:[],damage:0,potions:0,maxHp:100};
 let mini=null, campNotice='', dailyCheck=0;
 let heroAction={type:'idle',dir:'right',at:0},pendingSlash=null,particles=[],cuts=[],shakeUntil=0,shakePower=0,hitStop=0,homeView='hall',selectedFloor=1;
 const reducedMotion=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -156,8 +157,8 @@ function setBlocking(value) {
   if (blocking) { pointer=null;trail=[];pendingSlash=null; }
 }
 function releaseGuard() { guardPointer=null;guardKey=false;setBlocking(false); }
-function openPanel() { if(phase==='dead'&&time<deathPanelAt)return;paused = true; releaseGuard(); pointer=null; trail=[]; $('panel').hidden=false; renderPanel(); }
-function itemIcon(id){const url=ITEMS[id]&&itemIconData(sprites,id);return url?`<img class="gearIcon canonicalIcon" alt="" src="${url}">`:'<span class="emptySlot">＋</span>';}
+function openPanel() { selectedSlot=null;gearView='visual'; if(phase==='dead'&&time<deathPanelAt)return;paused = true; releaseGuard(); pointer=null; trail=[]; $('panel').hidden=false; renderPanel(); }
+function itemIcon(id){const url=ITEMS[id]&&(!renderFailure&&renderer.itemIcon?.(id)||itemIconData(sprites,id));return url?`<img class="gearIcon canonicalIcon" alt="" src="${url}">`:'<span class="emptySlot">＋</span>';}
 function itemStats(i){return [i.attack?`ATK +${i.attack}`:'',i.armor?`DEF +${i.armor}`:'',i.health?`HP +${i.health}`:'',i.hands===2?'2 HANDS':i.shield?'BLOCK':''].filter(Boolean).join(' · ');}
 function rewardText(r){return `+${r.gold} GOLD · +${r.xp||0} EXP${r.potions?' · +'+r.potions+' POTION':''}`;}
 function questPanel(){
@@ -200,20 +201,18 @@ function updateMini(now){
   }
 }
 function renderPanel() {
+  $('panel').dataset.equipment=tab==='gear'&&!['won','dead'].includes(phase)?'true':'false';
   const s=stats(save);
   $('statline').textContent=`LV ${save.level} · ATK ${s.attack} · DEF ${s.armor} · HP ${Math.ceil(hp)}/${s.maxHp} · ◈ ${save.gold}`;
   $('panel').querySelector('h1').textContent = phase==='won'?'FLOOR CLEARED':phase==='dead'?'YOU FELL':({gear:'CHARACTER',shop:'THE ARMORY',quests:'CONTRACTS',camp:'WAYFARER CAMP'}[tab]);
   $('nextFloor').hidden = !['won','dead'].includes(phase);
   $('nextFloor').textContent = phase==='dead'?'RETRY FLOOR':floor===floors.length?'กลับแผนที่':'เลือกด่านถัดไป';
-  const slotButton=slot=>{const id=save.equipment[slot],locked=slot==='offhand'&&ITEMS[save.equipment.weapon]?.hands===2;return `<button class="gearSlot ${selectedSlot===slot?'selected':''}" data-slot="${slot}" aria-label="${SLOTS[slot]}: ${locked?'Locked':ITEMS[id]?.name||'Empty'}" ${locked?'disabled':''}><small>${SLOTS[slot]}</small>${locked?'<span class="emptySlot">🔒</span>':itemIcon(id)}<span>${locked?'TWO HANDED':ITEMS[id]?.name||'Empty'}</span></button>`;};
-  const gear=`<div class="paperDoll"><div>${['helm','armor','pants','boots'].map(slotButton).join('')}</div><div class="heroDisplay"><canvas id="heroPreview" width="240" height="400" aria-label="Equipped character preview"></canvas><b>${s.magic?'ARCANIST':s.canBlock?'VANGUARD':'DUELIST'}</b><small>${s.canBlock?'SHIELD READY':'NO SHIELD · DODGE / WARD'}</small></div><div>${['weapon','offhand','neck','cloak'].map(slotButton).join('')}</div></div><div class="ringSlots">${['ring1','ring2'].map(slotButton).join('')}</div><div class="inventoryTitle">${SLOTS[selectedSlot]} <span>เลือกเพื่อสวมใส่</span></div><div class="inventory">${save.owned.filter(id=>ITEMS[id].slot===(selectedSlot.startsWith('ring')?'ring':selectedSlot)).map(id=>`<button class="inventoryItem ${save.equipment[selectedSlot]===id?'selected':''}" data-item="${id}">${itemIcon(id)}<b>${ITEMS[id].name}</b><small>${itemStats(ITEMS[id])}</small></button>`).join('')}<button class="inventoryItem" data-unequip="${selectedSlot}">ถอดอุปกรณ์</button></div><p class="gearHelp">สองมือจะล็อกช่องรอง • ต้องถือโล่จึงบล็อกได้<br>Staff: วาด □ เพื่อสร้าง WARD รับได้ 2 ครั้ง</p>`;
-  const upgrades = ['vigor','edge'].map(k=>`<div class="upgrade">${k.toUpperCase()} ${save.upgrades[k]}/10<button data-upgrade="${k}" ${save.upgrades[k]>=10?'disabled':''}>◈ ${80+save.upgrades[k]*50}</button></div>`).join('');
+  const gear=tab==='gear'&&!['won','dead'].includes(phase)?equipmentScreen(save,selectedSlot,gearView,itemIcon):'';
   const summary=phase==='won'?`<section class="clearSummary"><div class="stars" aria-label="${stars(run)} of 3 stars">${'★'.repeat(stars(run))}<span>${'★'.repeat(3-stars(run))}</span></div><h2>${floors[floor-1]}</h2><b>+${run.xp} EXP · +${run.gold} GOLD</b><p>Damage ${run.damage} · Potions ${run.potions}</p><small>★★★ ไม่เสีย HP / ไม่ใช้ยา<br>★★ เสีย HP ≤ ${Math.round(run.maxHp*.5)} / ใช้ยา ≤ 1</small><div class="lootList">${run.items.map(id=>`<div>${itemIcon(id)}${ITEMS[id].name} ×1</div>`).join('')}</div></section>`:'';
-  $('panelBody').innerHTML = summary+(tab==='gear' ? gear + `<p>EXP ${save.xp} / ${save.level*100}</p><div class="upgrade">Vigor +12 HP / Edge +2 ATK</div>` + upgrades + '<button class="returnHall" data-home="map">แผนที่การเดินทาง →</button>' : `<div class="inventory">${Object.entries(ITEMS).map(([id,item])=>`<button class="inventoryItem" data-buy="${id}" ${save.owned.includes(id)||save.gold<item.cost?'disabled':''}>${itemIcon(id)}<b>${item.name}</b><small>${itemStats(item)}</small><span>${save.owned.includes(id)?'OWNED':'◈ '+item.cost}</span></button>`).join('')}</div><button class="primary" data-potion-buy ${save.gold<40||save.potions>=99?'disabled':''}>HEALING POTION · 40 GOLD</button>`);
+  $('panelBody').innerHTML = summary+(tab==='gear' ? (summary?'':gear) : `<div class="inventory">${Object.entries(ITEMS).map(([id,item])=>`<button class="inventoryItem" data-buy="${id}" ${save.owned.includes(id)||save.gold<item.cost?'disabled':''}>${itemIcon(id)}<b>${item.name}</b><small>${itemStats(item)}</small><span>${save.owned.includes(id)?'OWNED':'◈ '+item.cost}</span></button>`).join('')}</div><button class="primary" data-potion-buy ${save.gold<40||save.potions>=99?'disabled':''}>HEALING POTION · 40 GOLD</button>`);
   if(tab==='quests')$('panelBody').innerHTML=questPanel();
   if(tab==='camp')$('panelBody').innerHTML=campPanel();
-  if(tab==='gear'){
-    $('panelBody').querySelector('.heroDisplay').insertAdjacentHTML('beforeend','<div class="poseControls"><button data-preview="left" aria-label="หมุนตัวละครซ้าย">↶</button><button data-preview="slash">ลองฟัน</button><button data-preview="right" aria-label="หมุนตัวละครขวา">↷</button></div>');
+  if(gear){
     renderer.preview($('heroPreview'),save);
   }else renderer.closePreview();
   document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab)); hud();
@@ -238,15 +237,17 @@ document.addEventListener('click',e=>{
   if(b.dataset.home)goHome(b.dataset.home);
   if(b.dataset.selectFloor&&Number(b.dataset.selectFloor)<=save.unlocked){selectedFloor=Number(b.dataset.selectFloor);renderHome();}
   if(b.dataset.embark&&!renderFailure&&Number(b.dataset.embark)<=save.unlocked&&spritesLoaded===Object.keys(sprites).length){$('intro').hidden=true;enter(Number(b.dataset.embark));}
-  if(b.dataset.hub){tab=b.dataset.hub;openPanel();}
+  if(b.dataset.hub){tab=b.dataset.hub;selectedSlot=null;gearView='visual';openPanel();}
   if(b.id==='heroBtn'||b.id==='menuBtn')openPanel();
   if(b.hasAttribute('data-close')){ mini=null;renderer.closePreview();$('panel').hidden=true;paused=false;if(phase==='home')renderHome(); }
-  if(b.dataset.tab){mini=null;tab=b.dataset.tab;renderPanel();}
+  if(b.dataset.tab){mini=null;tab=b.dataset.tab;selectedSlot=null;gearView='visual';renderPanel();}
   if(b.dataset.quest){const reward=claimQuest(save,b.dataset.quest);if(reward){campNotice=rewardText(reward);persist();renderPanel();}}
   if(b.dataset.mini)startMini(b.dataset.mini);
   if(b.id==='forgeStrike')strikeForge();
   if(b.dataset.rune!==undefined)answerRune(Number(b.dataset.rune));
-  if(b.dataset.slot){selectedSlot=b.dataset.slot;renderPanel();}
+  if(b.hasAttribute('data-gear-done')){selectedSlot=null;gearView='visual';renderPanel();}
+  if(b.dataset.gearView){gearView=b.dataset.gearView;renderPanel();}
+  if(b.dataset.slot&&!(b.dataset.slot==='offhand'&&ITEMS[save.equipment.weapon]?.hands===2)){selectedSlot=b.dataset.slot;gearView='visual';renderPanel();}
   if(b.dataset.item||b.dataset.unequip){if(equip(save,b.dataset.unequip||selectedSlot,b.dataset.item||null)){hp=Math.min(hp,stats(save).maxHp);persist();renderPanel();$('panel').querySelector('.sheet').scrollTop=0;}}
   if(b.id==='potionBtn')drinkPotion();
   if(b.hasAttribute('data-potion-buy')&&save.gold>=40&&save.potions<99){save.gold-=40;save.potions++;persist();renderPanel();}
