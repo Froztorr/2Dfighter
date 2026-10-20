@@ -1,3 +1,4 @@
+import {equipmentScreen} from './equipment-ui.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -201,12 +202,21 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   const imageCalls=[];
   const drawing=new Proxy({}, {get:(_,key)=>key==='createRadialGradient'?()=>({addColorStop(){}}):key==='drawImage'?(...args)=>imageCalls.push(args):()=>{},set:()=>true});
   const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{setProperty(){}},dataset:{},hidden:true,insertAdjacentHTML(){},setAttribute(){},classList:{toggle(){}},addEventListener(type,fn){events.set(id+':'+type,fn);},getContext:()=>drawing,querySelector:()=>node('heading'),getBoundingClientRect:()=>({left:0,top:0,width:240,height:400}),setPointerCapture(){}});return nodes.get(id);};
-  const context=vm.createContext({...core,...fps,...enemies,...atlas,...equipmentSprites,itemIconData:()=>"",createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},previewPose(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){const meta=atlas.ENEMY_ATLAS[path.split('/').at(-1).replace(/(?:-v2)?\.png$/,'')];if(meta){this.naturalWidth=meta.width;this.naturalHeight=meta.height;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
+  const context=vm.createContext({equipmentScreen,...core,...fps,...enemies,...atlas,...equipmentSprites,itemIconData:()=>"",createPhaserRenderer:()=>({syncEnemy:r=>imageCalls.push([r.sheet,r.sx,r.sy,r.sw,r.sh,0,0,r.sw,r.sh]),preview(){},previewPose(){},closePreview(){}}),Image:class{complete=true;naturalWidth=1122;naturalHeight=1402;set src(path){const meta=atlas.ENEMY_ATLAS[path.split('/').at(-1).replace(/(?:-v2)?\.png$/,'')];if(meta){this.naturalWidth=meta.width;this.naturalHeight=meta.height;}}},document:{createElement:()=>node("background"),getElementById:node,querySelectorAll:()=>[],addEventListener(type,fn){events.set("document:"+type,fn);},hidden:false},window:{addEventListener(){}},performance:{now:()=>0},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},requestAnimationFrame(){},console});
   const source=(await readFile(new URL('./app.js',import.meta.url),'utf8')).replace(/^import[^\n]+\n/gm,'');
   vm.runInContext(source,context);
   const run=s=>vm.runInContext(s,context);
   assert.equal(run('phase'),'home');run('loop(500)');assert.equal(run('enemy'),undefined);
   const clickButton=button=>events.get('document:click')({target:{closest:()=>({id:'',dataset:{},hasAttribute:()=>false,...button})}});
+  clickButton({dataset:{hub:'gear'}});assert.equal(run('selectedSlot'),null);assert.equal(nodes.get('panel').dataset.equipment,'true');
+  clickButton({dataset:{slot:'weapon'}});assert.match(nodes.get('panelBody').innerHTML,/equipmentGrid/);
+  clickButton({dataset:{item:'ember-staff'}});assert.equal(run('save.equipment.weapon'),'ember-staff');assert.equal(run('save.equipment.offhand'),null);
+  clickButton({dataset:{gearView:'description'}});assert.match(nodes.get('panelBody').innerHTML,/Ember Staff/);
+  clickButton({hasAttribute:name=>name==='data-gear-done'});assert.equal(run('selectedSlot'),null);assert.match(nodes.get('panelBody').innerHTML,/data-slot="offhand" disabled/);
+  clickButton({dataset:{slot:'weapon'}});clickButton({dataset:{item:'rust-sword'}});
+  clickButton({hasAttribute:name=>name==='data-gear-done'});clickButton({dataset:{slot:'offhand'}});clickButton({dataset:{item:'wood-shield'}});
+  assert.equal(JSON.parse(storage.get('emberblade-v1')).equipment.offhand,'wood-shield');
+  clickButton({hasAttribute:name=>name==='data-close'});assert.equal(nodes.get('panel').hidden,true);assert.equal(run('paused'),false);
   clickButton({id:'start'});assert.equal(run('phase'),'home');assert.match(nodes.get('homeBody').innerHTML,/THE EXPEDITION/);
   clickButton({dataset:{embark:'6'}});assert.equal(run('phase'),'home','locked floor is not entered');
   run('spritesLoaded=Object.keys(sprites).length');clickButton({dataset:{embark:'1'}});assert.equal(run('phase'),'combat');
@@ -257,6 +267,7 @@ test('real game loop: six floors, parry stun, dodge, spells, rewards, death, and
   }
   assert.equal(run('save.unlocked'),6);assert.ok(storage.has('emberblade-v1'));
   run('enter(3);hp=1;attack={dir:"up",at:time};loop(last+16)');assert.equal(run('phase'),'dead');assert.equal(run('paused'),false);run('for(let i=0;i<30;i++)loop(last+50)');assert.equal(run('paused'),true);
+  assert.ok(!nodes.get('panelBody').innerHTML.includes('heroPreview'),'death panel must keep retry visible instead of mounting an equipment preview');
   run('enter(3)');assert.equal(run('hp'),100);assert.equal(run('phase'),'combat');
   run('stamina=100;setBlocking(true);attack={dir:"up",kind:"heavy",at:time};loop(last+16)');
   assert.equal(run('hp'),100);assert.equal(run('stamina'),58);

@@ -12,7 +12,7 @@
 
 ## Main menu and combat feel
 
-เริ่มที่โถงหลัก → เลือกด่าน → ออกเดินทาง แผนที่แสดงด่านที่ล็อก/ปลดล็อก ดาวสูงสุด และของดรอป พร้อม EXP/ความคืบหน้ารวม หน้าตัวละครจัดเป็น folio ธีมหินและทองเหลืองพร้อมแท่นตัวละคร เข้าคลังอาวุธ/ภารกิจ/แคมป์ได้จากโถง กลับโถงระหว่างสู้จะยุติรอบปัจจุบัน โดยของที่ได้รับแล้วไม่หาย
+เริ่มที่โถงหลัก → เลือกด่าน → ออกเดินทาง แผนที่แสดงด่านที่ล็อก/ปลดล็อก ดาวสูงสุด และของดรอป พร้อม EXP/ความคืบหน้ารวม หน้าตัวละครใช้ฉากเทาน้ำเงินและช่องไอคอนรอบตัวตามวิดีโออ้างอิง แตะช่องเพื่อเปิด Visual / Description และตารางอุปกรณ์ 5 คอลัมน์ เข้าคลังอาวุธ/ภารกิจ/แคมป์ได้จากโถง กลับโถงระหว่างสู้จะยุติรอบปัจจุบัน โดยของที่ได้รับแล้วไม่หาย
 
 ฉากต่อสู้เป็น first person มือและอุปกรณ์เป็น 3D จริง ใช้ perspective camera, โมเดล mesh และแสงโลหะ/ผ้า มีโครงกระดูกช่วงไหล่–ศอก–ข้อมือ ใช้ two-bone IK ที่คงความยาวแขนและกำหนดทิศงอศอก ท่าฟันเคลื่อนผ่านระยะลึกพร้อมบิดช่วงไหล่ มีง้าง–ปะทะ–ตามแรง–คืนท่า 4 ทิศ ดาเมจเกิดที่ 110 ms; parry ตอบสนองทันที มี hitstop และ enemy recoil ปิด camera shake และ idle bob ตาม prefers-reduced-motion
 
@@ -47,7 +47,7 @@
 
 ชุดเกราะเปลี่ยนวัสดุของแขนและถุงมือในโมเดล 3D การตายลดมือพร้อม fade ก่อนเปิดผลแพ้ หมวกและรองเท้าดูได้ในหน้าสวมอุปกรณ์ เพราะมุมมองต่อสู้ไม่เห็นส่วนเหล่านี้
 
-หน้าสวมอุปกรณ์ใช้ `equipment-rig.mjs`: โมเดล Three.js แบบ orthographic 2.5D มี skeleton 22 ข้อ เสื้อ แขน และขาเป็น skinned mesh ที่ใช้กระดูกร่วมกัน อุปกรณ์เปลี่ยนชิ้นส่วนตาม slot และซ่อนส่วนฐานที่ถูกแทน อาวุธ geometry เดียวกับ combat ผูกกับ palm socket; อาวุธสองมือใช้ IK จับด้ามร่วมกันจริง มี idle breathing, cloth sway, ท่าฟัน และปุ่มหมุนใน inventory โดยไม่เปลี่ยน save format หรือค่าสถานะ
+หน้าสวมอุปกรณ์ใช้ `equipment-rig.mjs`: โมเดล Three.js แบบ orthographic 2.5D มี skeleton 22 ข้อ เสื้อ แขน และขาเป็น skinned mesh ที่ใช้กระดูกร่วมกัน อุปกรณ์เปลี่ยนชิ้นส่วนตาม slot และซ่อนส่วนฐานที่ถูกแทน อาวุธจากตัวสร้าง geometry ของ combat ผูกกับ palm socket; อาวุธสองมือใช้ IK จับด้ามร่วมกันจริง มี idle breathing, cloth sway, ท่าฟัน และปุ่มหมุนใน inventory โดยไม่เปลี่ยน save format หรือค่าสถานะ ภาพ inventory เรนเดอร์บนกริด pixel 144×240 พร้อม palette เดียวกัน เสื้อผ้าสร้างจาก geometry ตาม body/posture เดียวกับฐาน ไม่มีภาพเสื้อหรือใบหน้าที่เจนแยกมาบิดเป็น texture และไอคอนทั้ง 47 ชิ้นเรนเดอร์จากชิ้นที่สวมจริง ดู [ผลตรวจหน้าตามคลิป](docs/reference-equipment.md)
 
 หลักการประกอบชิ้นส่วนศึกษาจาก RanOnline (`DxSkinChar::SetPiece`, `DxSkinPiece::SetSkinMesh`, `DxCharPart` hand-bone attachment) แล้วเขียนใหม่สำหรับ Three.js ไม่ได้นำ engine C++ หรือ assets ของ Ran มาใช้ ดู [รายละเอียดและผลตรวจ](docs/rigged-equipment.md)
 
@@ -83,7 +83,7 @@
 
 Seven front-facing enemies use original `*-v2.png` dark-fantasy atlases with 40 poses each: three idle poses, guard, two hurt poses, two death poses, and eight poses per directional attack. Source-pixel ownership separates neighboring figures and retains detached weapon tips; each pose aligns to its measured foot anchor. The contact pose begins when damage resolves. Original atlases remain archived.
 
-Player arms render across the full viewport. Camera framing and lowered rest grips preserve the full arm length and connect both forearms to the bottom edge. Inventory now uses one base body and separate wearable garments, with explicit back/body/front cloak layers, a hood face opening, garment occlusion and hand-over-shaft ordering. Icons and worn items use canonical artwork; the 20 held items also supply combat geometry. See [the modular inventory report](docs/modular-inventory.md).
+Player arms render across the full viewport. Camera framing and lowered rest grips preserve the full arm length and connect both forearms to the bottom edge. The earlier inventory used one base body and separate wearable garments, with explicit back/body/front cloak layers, a hood face opening, garment occlusion and hand-over-shaft ordering. That earlier compositor used canonical artwork for icons and worn items; the 20 held items also supply combat geometry. See [the modular inventory report](docs/modular-inventory.md).
 
 Skull attacks require a matching directional dodge within 450 ms (170 ms for perfect). Shields and magic wards cannot stop skull attacks; shield-icon heavy attacks remain block-only.
 

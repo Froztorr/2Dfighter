@@ -1,5 +1,5 @@
 import { Player3D } from './player-3d.mjs';
-import { RiggedEquipmentFigure } from './equipment-rig.mjs';
+import { RiggedEquipmentFigure,rigItemIcon } from './equipment-rig.mjs';
 import { paintEnemyFrame } from './enemy-animation.mjs';
 
 function addTexture(scene,key,sheet,rect,runs){
@@ -27,12 +27,12 @@ export class FirstPersonPlayer {
 export class EquipmentPortrait {
   constructor(scene,sprites,save){this.scene=scene;this.key=`portrait:${rigSerial++}`;this.texture=scene.textures.createCanvas(this.key,240,400);this.model=new RiggedEquipmentFigure(sprites);this.image=scene.add.image(120,200,this.key);this.sync(save);scene.events.once('shutdown',()=>{this.model.destroy();scene.textures.remove(this.key);});}
   sync(save,state={}){
-    this.model.sync(save,state);const context=this.texture.context;context.clearRect(0,0,240,400);context.imageSmoothingEnabled=true;context.drawImage(this.model.canvas,0,0,240,400);this.texture.refresh();this.equipment={...save.equipment};
+    this.model.sync(save,state);const context=this.texture.context;context.clearRect(0,0,240,400);context.imageSmoothingEnabled=false;context.drawImage(this.model.canvas,0,0,240,400);this.texture.refresh();this.equipment={...save.equipment};
   }
 }
 
 export function createPhaserRenderer({canvas,background,sprites,tick,getState,onRenderError}){
-  let activeScene,hero,previewGame=null,enemyImages=[],enemyKey='',dangerAura,previewAngle=.08,previewAction='idle',previewStarted=0;
+  let activeScene,hero,previewGame=null,enemyImages=[],enemyKey='',dangerAura,previewAngle=.55,previewAction='idle',previewStarted=0;
   class CombatScene extends Phaser.Scene {
     constructor(){super('Combat');}
     create(){activeScene=this;this.textures.addCanvas('background',background);this.backdrop=this.add.image(0,0,'background').setOrigin(0).setDisplaySize(480,800);const world=this.add.container(0,0).setScale(2);try{hero=new FirstPersonPlayer(this,sprites);}catch(error){onRenderError?.(error);this.scene.pause();return;}world.add(hero.root);this.world=world;dangerAura=this.add.graphics();world.addAt(dangerAura,0);enemyImages=[this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false),this.add.image(0,0,'__WHITE').setAlpha(0).setVisible(false)];world.addAt(enemyImages[0],1);world.addAt(enemyImages[1],2);this.cameras.main.setBackgroundColor('#171522');}
@@ -41,6 +41,7 @@ export function createPhaserRenderer({canvas,background,sprites,tick,getState,on
   const game=new Phaser.Game({type:Phaser.CANVAS,canvas,width:480,height:800,transparent:false,antialias:false,pixelArt:true,audio:{noAudio:true},scene:CombatScene,banner:false,render:{roundPixels:false},fps:{target:60}});
   return {
     game,
+    itemIcon(id){try{return rigItemIcon(id);}catch(error){onRenderError?.(error);return '';}},
     syncEnemy(frame){
       if(!activeScene)return;
       const {sheet,type,key,x,y,size,aspect,alpha=1,mirror=false,danger=null,...rect}=frame;

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test.mjs equipment-rig.test.mjs",
+    "test": "node --test test.mjs equipment-rig.test.mjs equipment-ui.test.mjs",
     "start": "node server.mjs",
     "test:browser": "node tools/browser-animation.mjs",
     "preview:3d": "node tools/preview-3d.mjs",
