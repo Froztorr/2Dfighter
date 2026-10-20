@@ -1,3 +1,4 @@
+import {AUTHORED_POSES} from '../authored-poses.mjs';
 import * as THREE from '../vendor/three.module.js';
 import {RiggedEquipmentFigure,STANCES,weaponTip,aimWeapon} from '../equipment-rig.mjs';
 import {ITEMS,SLOTS,newSave,loadSave} from '../core.mjs';
@@ -15,6 +16,7 @@ const $=id=>document.getElementById(id),presets={
 let storage;try{storage=localStorage;}catch{}
 const saved=readPoses(storage),drafts={},dirty=new Set(),figure=new RiggedEquipmentFigure(),save=newSave();
 let original;try{original=loadSave(storage?.getItem('emberblade-v1'));}catch{original=newSave();}
+save.appearance={...original.appearance};
 save.equipment={...save.equipment,helm:null,armor:'leather-vest',pants:'rogue-pants',boots:'trail-boots'};
 const canvas=$('figure'),context=canvas.getContext('2d');let family='greatsword',selected='right',frame='A',drag=null,animation=0,animationStart=0;
 const joints={right:['R','ข้อมือขวา'],left:['L','ข้อมือซ้าย'],rightFoot:['R','เท้าขวา'],leftFoot:['L','เท้าซ้าย'],hips:['H','สะโพก / Hip'],torso:['T','ลำตัว / Torso'],neckRotation:['N','คอ'],
@@ -60,7 +62,7 @@ for(const ring of $('dials').querySelectorAll('.dial')){
 }
 function defaultPose(id){
  const p=STANCES[id];
- return structuredClone({...Object.fromEntries(Object.entries(POSE_LIMITS).filter(([,b])=>Array.isArray(b[0])).map(([key])=>[key,[0,0,0]])),...cleanPose(p),left:p.left||[.1,1,.2],leftRotation:p.leftRotation||[0,0,0],rightFoot:[-p.feet[0],.08,-p.feet[1]],leftFoot:[p.feet[0],.08,p.feet[1]],hips:p.hips||[0,0,0],body:p.body||[0,0,0],rightPole:[-.48,1.08,-.08],leftPole:[.48,1.08,-.08]});
+ return structuredClone({...Object.fromEntries(Object.entries(POSE_LIMITS).filter(([,b])=>Array.isArray(b[0])).map(([key])=>[key,[0,0,0]])),...cleanPose(p),left:p.left||[.1,1,.2],leftRotation:p.leftRotation||[0,0,0],rightFoot:[-p.feet[0],.08,-p.feet[1]],leftFoot:[p.feet[0],.08,p.feet[1]],hips:p.hips||[0,0,0],body:p.body||[0,0,0],rightPole:[-.48,1.08,-.08],leftPole:[.48,1.08,-.08],...cleanPose(AUTHORED_POSES[id])});
 }
 function editPose(){return frame==='B'?drafts[family].attack:drafts[family];}
 function selectFrame(value){
@@ -129,7 +131,7 @@ function fields(){
 }
 function select(id){selected=id;$('joint').value=id;fields();render();}
 function choose(){
- stopAnimation();frame='A';family=$('family').value;drafts[family]??={...defaultPose(family),...saved[family]};save.equipment.weapon=presets[family][1];save.equipment.offhand=presets[family][2];
+ stopAnimation();frame='A';family=$('family').value;if(!drafts[family]){drafts[family]={...defaultPose(family),...saved[family]};if(saved[family]&&!saved[family].attack)delete drafts[family].attack;}save.equipment.weapon=presets[family][1];save.equipment.offhand=presets[family][2];
  if(drafts[family].attack)drafts[family].attack={...cleanPose(drafts[family],false),...drafts[family].attack};
  $('stanceName').textContent=presets[family][0];$('status').textContent=dirty.has(family)?'แก้ไขแล้ว · ยังไม่ได้บันทึก':saved[family]?'ใช้ท่าที่บันทึกไว้':'ท่าตั้งต้น';fields();render();
 }
