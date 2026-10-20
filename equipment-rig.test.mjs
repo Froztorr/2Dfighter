@@ -2,8 +2,30 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Vector3,Quaternion} from './vendor/three.module.js';
 import {ITEMS,newSave} from './core.mjs';
-import {CharacterRig,STANCES,stanceFor,weaponTip,aimWeapon} from './equipment-rig.mjs';
+import {CharacterRig,STANCES,stanceFor,weaponTip,aimWeapon,blendPostures} from './equipment-rig.mjs';
 import {cleanPose,readPoses,writePose} from './pose-settings.mjs';
+
+test('authored A/B attack reaches both poses, interpolates shortest rotation and persists without nesting',()=>{
+ const a={right:[-.3,1.12,.24],rightWrist:[0,0,170*Math.PI/180],neckRotation:[.05,0,0]};
+ const b={right:[-.1,1.3,.34],rightWrist:[0,0,-170*Math.PI/180],neckRotation:[.3,0,.1],torso:[.02,0,0]};
+ const data=new Map(),storage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)};
+ writePose(storage,'single',{...a,attack:{...b,attack:{right:[0,1,0]}}});
+ const saved=readPoses(storage).single;assert.deepEqual(saved.attack,b);assert.equal(saved.attack.attack,undefined);
+ const halfway=blendPostures(a,b,.5);
+ assert.ok(Math.abs(Math.abs(halfway.rightWrist[2])-Math.PI)<1e-6,'rotation must take the short path through 180 degrees');
+ assert.ok(Math.abs(halfway.right[0]+.2)<1e-6);
+ const model=new CharacterRig(),save=newSave();save.equipment.weapon='iron-sword';save.equipment.offhand=null;model.equip(save);
+ const snapshot=()=>Object.values(model.bones).map(b=>({p:b.getWorldPosition(new Vector3()),q:b.getWorldQuaternion(new Quaternion())}));
+ try{
+  for(const [time,expected]of [[0,a],[275,{...a,...b}],[550,a]]){
+   model.pose({angle:0,reducedMotion:true,posture:expected});const reference=snapshot();
+   model.pose({angle:0,action:'slash',time,reducedMotion:true,posture:saved});snapshot().forEach((bone,i)=>{
+    assert.ok(bone.p.distanceTo(reference[i].p)<1e-5,'attack endpoint must match authored pose');
+    assert.ok(bone.q.angleTo(reference[i].q)<1e-5);
+   });
+  }
+ }finally{model.destroy();}
+});
 
 test('joint rotations persist and move connected limbs, neck and fitted equipment',()=>{
  const model=new CharacterRig(),save=newSave(),custom={torso:[.02,.03,0],hipRotation:[.12,0,.08],neckRotation:[.2,0,.1],rightShoulder:[.3,0,.2],leftShoulder:[-.2,0,.1],rightElbow:[.25,0,.1],leftElbow:[.2,0,-.1],rightKnee:[.3,0,.08],leftKnee:[.2,0,-.08],rightWrist:[.2,0,.3],leftWrist:[-.2,0,.1]};

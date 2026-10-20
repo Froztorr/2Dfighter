@@ -16,6 +16,8 @@
  </section>
  <section class="controls">
   <small>01 / เลือกท่า</small><label class="wide">ชุดอาวุธ<select id="family"></select></label>
+  <div class="actions poseFrames" aria-label="ท่าที่กำลังแก้"><button id="poseA" aria-pressed="true">A · ยืนเตรียม</button><button id="poseB" aria-pressed="false">B · สุดจังหวะโจมตี</button></div>
+  <p id="frameHint" class="hint"></p><button id="clearAttack" hidden>ใช้ท่าโจมตีเดิม</button>
   <p class="hint">ลากมือ เท้า ลำตัว หรือสะโพกเพื่อย้ายตำแหน่ง · ลาก ◆ ที่ปลายอาวุธเพื่อเปลี่ยนทิศ · เลือกข้อแล้วลากวงหมุน หรือใช้ปุ่มลูกศรบนวง</p>
   <details><summary>อุปกรณ์ที่ใช้ลอง</summary><div id="equipment"></div><p class="hint">ใช้ชุดที่ใส่อยู่ในเกมได้ อุปกรณ์ทดลองไม่เปลี่ยนของหรือเงินในเซฟ</p><button id="currentOutfit">ใช้เสื้อผ้าในเกม</button></details>
   <div class="divider"></div><small>02 / จัดแนวร่างกาย</small>
@@ -25,7 +27,7 @@
   <div id="weaponFields"><h2>องศาอาวุธ / ข้อมือ</h2><div id="rotationFields"></div></div>
   <details open><summary>ถ่ายน้ำหนักและลำตัว</summary><div id="bodyFields"></div></details>
   <div class="divider"></div><small>03 / ใช้ในเกม</small>
-  <p class="hint">บันทึกแยกตามประเภทท่า ใช้กับทุกชุดของท่านั้นในหน้าอุปกรณ์ บันทึกเฉพาะเบราว์เซอร์นี้</p>
+  <p class="hint">บันทึก A และ B แยกตามประเภทท่า ใช้กับทุกชุดของท่านั้นในหน้าอุปกรณ์ บันทึกเฉพาะเบราว์เซอร์นี้</p>
   <div class="actions"><button id="apply">บันทึกท่านี้ในเกม</button><button id="reset">คืนท่าตั้งต้น</button></div>
   <p id="status" role="status" aria-live="polite">ยังไม่มีการแก้ไข</p>
  </section>

@@ -14,7 +14,7 @@ export const POSE_LIMITS={
   [side+'Wrist',[[-Math.PI,Math.PI],[-Math.PI,Math.PI],[-Math.PI,Math.PI]]]
  ])),twist:[-.6,.6],lower:[0,.15]
 };
-export function cleanPose(value){
+export function cleanPose(value,includeAttack=true){
  const result={};if(!value||typeof value!=='object')return result;
  for(const [key,bounds]of Object.entries(POSE_LIMITS)){
   const v=value[key],vector=Array.isArray(bounds[0]);
@@ -22,6 +22,7 @@ export function cleanPose(value){
   const clamp=(n,b)=>Math.max(b[0],Math.min(b[1],n));
   result[key]=vector?v.map((n,i)=>clamp(n,bounds[i])):clamp(v,bounds);
  }
+ if(includeAttack&&value.attack){const attack=cleanPose(value.attack,false);if(Object.keys(attack).length)result.attack=attack;}
  return result;
 }
 export function readPoses(storage){
