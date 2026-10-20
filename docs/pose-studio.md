@@ -20,3 +20,11 @@ The editor constrains limb length and numeric ranges; it is not a collision solv
 
 ![Pose workshop](pose-studio.png)
 ![Revised defaults](pose-studio-presets.png)
+
+## Export saved poses
+
+Under **04 / ส่งท่าออก**, **Export ท่าที่บันทึกทั้งหมด** reads all saved weapon families, including attack B, and shows formatted JSON. **คัดลอก JSON** copies it for chat; if clipboard access fails, the text stays selected for manual copying. **ดาวน์โหลด .json** saves `emberblade-poses.json`. Each action rereads saved values; unsaved drafts are excluded with a warning. Export does not write pose storage or include progression/equipment inventory.
+
+The file identifies `format: emberblade-poses`, `version: 1` and `angleUnit: radians`. Browser/origin isolation still applies: export from the same address used to edit the poses.
+
+Verification: 47 Node tests pass, including exported A/B preservation and progression isolation. Browser export returned two test families with B intact; clipboard readback matched the JSON, and the actual downloaded file parsed successfully. Screenshot: `pose-export.png`. These checks used the separate localhost test origin, preserving the user's 127.0.0.1 editor. Phone clipboard/download behavior has not been tested.

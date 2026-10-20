@@ -7,3 +7,4 @@
 .joint.tip{border-radius:4px;color:#fff0b2;border-color:#eac275}.joint.rotation{width:26px;height:26px;min-height:26px;background:#17252ed9;font-size:9px}
 [hidden]{display:none!important}
 .poseFrames button[aria-pressed=true]{border-color:#f0ce89;background:#4c432f;color:#ffe1a1}.poseFrames{margin-top:14px}#clearAttack{font-size:12px}
+#exportText{width:100%;resize:vertical;background:#0d171e;color:#d4e5e8;border:1px solid #53636f;border-radius:5px;padding:10px;font:12px/1.5 monospace;white-space:pre;overflow:auto}#exportStatus{font-size:12px;color:#96cfb6}

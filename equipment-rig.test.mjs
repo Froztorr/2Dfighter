@@ -3,7 +3,20 @@ import assert from 'node:assert/strict';
 import {Vector3,Quaternion} from './vendor/three.module.js';
 import {ITEMS,newSave} from './core.mjs';
 import {CharacterRig,STANCES,stanceFor,weaponTip,aimWeapon,blendPostures} from './equipment-rig.mjs';
-import {cleanPose,readPoses,writePose} from './pose-settings.mjs';
+import {cleanPose,readPoses,writePose,exportPoses} from './pose-settings.mjs';
+
+test('export contains all saved A/B poses and excludes progression and unsaved or unknown data',()=>{
+ const data=new Map(),storage={getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)};
+ const stance={right:[-.2,1.2,.2],rightElbow:[.1,0,0],attack:{right:[.1,1.3,.3],rightWrist:[0,0,-.6]}};
+ writePose(storage,'single',stance);writePose(storage,'staff',{neckRotation:[.1,0,0]});
+ data.set('emberblade-v1','{"gold":999,"equipment":{"weapon":"rust-sword"}}');
+ const output=JSON.parse(exportPoses(storage));
+ assert.equal(output.format,'emberblade-poses');assert.equal(output.version,1);assert.equal(output.angleUnit,'radians');
+ assert.deepEqual(output.poses,{staff:{neckRotation:[.1,0,0]},single:stance});
+ assert.ok(!JSON.stringify(output).includes('gold'));assert.equal(output.poses.shield,undefined);
+ assert.deepEqual(JSON.parse(exportPoses({getItem:()=>'{bad'})).poses,{});
+ assert.deepEqual(JSON.parse(data.get('emberblade-v1')),{gold:999,equipment:{weapon:'rust-sword'}});
+});
 
 test('authored A/B attack reaches both poses, interpolates shortest rotation and persists without nesting',()=>{
  const a={right:[-.3,1.12,.24],rightWrist:[0,0,170*Math.PI/180],neckRotation:[.05,0,0]};
