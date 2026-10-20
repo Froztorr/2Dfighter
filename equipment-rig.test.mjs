@@ -54,10 +54,45 @@ test('two handed weapons keep both closed hands on the same shaft through a cut'
  const model=new CharacterRig(),save=newSave();
  try{for(const weapon of ['greatsword','ember-staff','ice-staff','demon-staff','inferno-axe']){
   save.equipment.weapon=weapon;model.equip(save);
-  for(const time of [0,120,270,550]){model.pose({action:'slash',time,angle:.5});
-   const expected=model.arms.right.grip.localToWorld(new Vector3(0,-.125,0)),actual=model.arms.left.grip.getWorldPosition(new Vector3());assert.ok(expected.distanceTo(actual)<1e-5,weapon+' support hand slips');
+  for(const action of ['idle','slash','cast','guard'])for(let time=0;time<=550;time+=25){model.pose({action,time,angle:.5});
+   const expected=model.arms.right.grip.localToWorld(new Vector3(0,ITEMS[weapon].magic?.25:-.125,0)),actual=model.arms.left.grip.getWorldPosition(new Vector3());assert.ok(expected.distanceTo(actual)<1e-5,weapon+' support hand slips');
   }
  }}finally{model.destroy();}
+});
+
+test('changing weapon families changes the whole ready stance and restores it after a cut',()=>{
+ const model=new CharacterRig(),save=newSave(),poses=[];
+ try{
+  for(const [weapon,offhand]of [['ember-staff',null],['greatsword',null],['venom-dagger','parry-dagger'],['iron-sword','steel-shield']]){
+   save.equipment.weapon=weapon;save.equipment.offhand=offhand;model.equip(save);model.pose({time:0,angle:0,reducedMotion:true});
+   const snapshot=()=>['rightGrip','leftGrip','rightAnkle','leftAnkle'].map(name=>model.bones[name].getWorldPosition(new Vector3()));
+   const ready=snapshot();poses.push(ready);
+   if(weapon==='ember-staff')assert.ok(ready[1].y-ready[0].y>.18,'staff hands must spread along the shaft, not both crowd the pommel');
+   if(offhand==='steel-shield')assert.ok(ready[1].y>1.1&&ready[1].z>.2,'shield must cover the chest');
+   model.pose({action:'slash',time:270,angle:0});assert.ok(ready[0].distanceTo(snapshot()[0])>.08,'cut needs an actual arm movement');
+   model.pose({action:'slash',time:550,angle:0,reducedMotion:true});snapshot().forEach((p,i)=>assert.ok(p.distanceTo(ready[i])<1e-5,'recovery must settle into the equipped stance'));
+  }
+  for(let i=0;i<poses.length;i++)for(let j=i+1;j<poses.length;j++){
+   assert.ok(poses[i][0].distanceTo(poses[j][0])+poses[i][1].distanceTo(poses[j][1])>.15,'weapon families share the same arm pose');
+   assert.ok(poses[i][2].distanceTo(poses[j][2])+poses[i][3].distanceTo(poses[j][3])>.06,'weapon families share the same footing');
+  }
+ }finally{model.destroy();}
+});
+
+test('skin and garments have repeatable colored pixel clusters with discrete shade ramps',()=>{
+ const model=new CharacterRig();
+ try{
+  for(const kind of ['skin','cloth','leather','steel']){
+   const a=model.material(null,0xb98c6c,kind),b=model.material(null,0xb98c6c,kind);
+   assert.ok(a.map?.isDataTexture,kind+' is missing its surface texture');
+   assert.equal(a.map,b.map,'repeated materials should reuse their texture');
+   const data=a.map.image.data,colors=new Set();
+   for(let i=0;i<data.length;i+=4){assert.equal(data[i+3],255);colors.add(`${data[i]},${data[i+1]},${data[i+2]}`);}
+   assert.ok(colors.size>=5&&colors.size<=10,kind+' needs a controlled multi-shade palette');
+   assert.ok([...colors].some(c=>new Set(c.split(',')).size>1),'shadows must carry hue, not just grey noise');
+   a.dispose();b.dispose();
+  }
+ }finally{model.destroy();}
 });
 
 test('continuous garment vertices deform at elbows rather than splitting into pictures',()=>{

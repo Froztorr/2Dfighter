@@ -5,6 +5,16 @@ import {solveArm} from './player-rig.mjs';
 import {makeWeapon,makeShield,combatWebGLRenderer} from './player-3d.mjs';
 
 const clamp=THREE.MathUtils.clamp;
+// Palm targets are in body space; every garment follows the same solved skeleton.
+const STANCES={
+ staff:{right:[-.26,1.02,.26],rotation:[.05,0,-.35],spread:.25,feet:[.14,.09],twist:.12,lower:.02},
+ greatsword:{right:[-.02,1.14,.30],rotation:[.12,0,.85],spread:-.125,feet:[.18,-.10],twist:-.22,lower:.04},
+ greataxe:{right:[-.12,1.12,.29],rotation:[.16,0,-.55],spread:-.125,feet:[.20,-.04],twist:.18,lower:.05},
+ dual:{right:[-.30,1.13,.23],rotation:[.12,0,.65],left:[.32,.99,.23],leftRotation:[-.15,0,-2.5],feet:[.21,.13],twist:.28,lower:.06},
+ shield:{right:[-.32,1.01,.19],rotation:[.10,0,.35],left:[.23,1.20,.32],leftRotation:[-.15,-.25,-.12],feet:[.16,-.13],twist:-.18,lower:.025},
+ wand:{right:[-.30,1.19,.25],rotation:[-.14,0,.28],left:[.29,.91,.12],leftRotation:[0,0,-.15],feet:[.12,.06],twist:.10,lower:.01},
+ single:{right:[-.29,.98,.17],rotation:[.12,0,.45],left:[.28,.88,.08],leftRotation:[0,0,-.12],feet:[.12,-.03],twist:-.10,lower:.01}
+};
 function mesh(parent,geometry,material,position=[0,0,0],scale=[1,1,1]){const object=new THREE.Mesh(geometry,material);object.position.set(...position);object.scale.set(...scale);parent.add(object);return object;}
 function oval(parent,radius,material,position,scale){return mesh(parent,new THREE.SphereGeometry(radius,32,20),material,position,scale);}
 function band(parent,radius,material,position,scale=[1,1,1]){const object=mesh(parent,new THREE.TorusGeometry(radius,.004,8,40),material,position,scale);object.rotation.x=Math.PI/2;return object;}
@@ -28,7 +38,7 @@ export class CharacterRig {
   this.root.updateMatrixWorld(true);this.skeleton=new THREE.Skeleton(Object.values(this.bones));this.skeleton.calculateInverses();
   this.bindPositions=new Map(this.skeleton.bones.map(b=>[b,b.position.clone()]));
   this.base={};const baseMat=this.material('base',0x3e4854,'cloth'),bootMat=this.material(null,0x302923,'leather');
-  this.mats={skin:this.material(null,0xb98c6c,'leather',{bumpScale:.0001,roughness:.85}),glove:this.material(null,0x493020,'leather'),hair:this.material(null,0x39291f,'leather'),gold:this.material(null,0x9d7b43,'gold'),dark:this.material(null,0x242327,'cloth')};
+  this.mats={skin:this.material(null,0xb98c6c,'skin'),glove:this.material(null,0x493020,'leather'),hair:this.material(null,0x39291f,'hair'),gold:this.material(null,0x9d7b43,'gold'),dark:this.material(null,0x242327,'cloth')};
   this.base.torso=this.group('base-torso');this.torso(this.base.torso,baseMat);
   this.base.arms=this.group('base-arms');this.sleeves(this.base.arms,baseMat);
   this.base.pants=this.group('base-pants');this.trousers(this.base.pants,baseMat);
@@ -55,19 +65,29 @@ export class CharacterRig {
  }
  group(name,parent=this.root){const group=new THREE.Group();group.name=name;parent.add(group);return group;}
  material(id,color,kind){
-  // Illustrations are inventory icons, not UV maps; every garment shares this palette and light.
-  const mat=new THREE.MeshLambertMaterial({color,side:THREE.DoubleSide});
-  if(!id||!['cloth','leather','steel'].includes(kind))return mat;
+  // Hue-shifted pixel clusters live on the surface, so they stay attached while posing.
+  let gradient=this.textures.get('light-ramp');
+  if(!gradient){gradient=new THREE.DataTexture(new Uint8Array([65,105,155,205,255]),5,1,THREE.RedFormat);gradient.magFilter=gradient.minFilter=THREE.NearestFilter;gradient.needsUpdate=true;this.textures.set('light-ramp',gradient);}
+  const mat=new THREE.MeshToonMaterial({color,gradientMap:gradient,side:THREE.DoubleSide});
+  if(!['skin','hair','cloth','leather','steel','gold'].includes(kind))return mat;
   const key=kind+':'+color;let map=this.textures.get(key);
   if(!map){
-   const data=new Uint8Array(32*48*4);
+   const data=new Uint8Array(32*48*4),base=new THREE.Color(color),shadow=new THREE.Color(0x242139),light=new THREE.Color(0xffe5ae);
+   const palette=Array.from({length:7},(_,i)=>{const c=base.clone();if(i<3)c.lerp(shadow,(3-i)*.19);else c.lerp(light,(i-3)*.075);return c.convertLinearToSRGB().toArray().map(v=>Math.round(v*255));});
    for(let y=0;y<48;y++)for(let x=0;x<32;x++){
-    const fold=Math.cos(x*.66)*.09,mail=((x+(y%4<2?0:2))%4===0?-.22:((x+y)%4===0?.18:0)),stitch=(x===3||x===28)&&y%3===0?.2:0;
-    const value=Math.round(255*Math.min(1,kind==='steel'?.81+mail:.85+fold+stitch));const i=(y*32+x)*4;data.set([value,value,value,255],i);
+    const u=x/31,v=y/47,fold=Math.cos(x*.43+Math.sin(y*.18)*1.5),edge=x===2||x===29;
+    let shade=3;
+    if(kind==='skin')shade=Math.round(2.5+1.8*Math.cos((u-.40)*Math.PI*2)+.6*Math.cos(v*9));
+    else if(kind==='hair')shade=Math.round(2.5+1.7*Math.cos(x*.8+Math.floor(y/12))+.4*Math.cos(y*.3));
+    else if(kind==='cloth')shade=Math.round(3+.85*fold+.7*Math.cos(y*.32+u*5)+(edge&&y%4<2?.7:0)+((x+y)%4===0?.25:0));
+    else if(kind==='leather')shade=Math.round(3+.65*fold+(edge?(y%4<2?1.4:-.8):0)+(y%12===3&&x%7<3?.55:0));
+    else shade=Math.round(2.8+2*Math.cos((u-.33)*Math.PI*2)+(y%8===0?.9:0)+(x%8===3&&y%8===3?1.2:0));
+    if(kind==='leather'&&edge)shade=y%12===2?6:y%4===3?1:shade;
+    data.set([...palette[clamp(shade,0,6)],255],(y*32+x)*4);
    }
-   map=new THREE.DataTexture(data,32,48);map.magFilter=map.minFilter=THREE.NearestFilter;map.needsUpdate=true;this.textures.set(key,map);
+   map=new THREE.DataTexture(data,32,48);map.colorSpace=THREE.SRGBColorSpace;map.magFilter=map.minFilter=THREE.NearestFilter;map.needsUpdate=true;this.textures.set(key,map);
   }
-  mat.map=map;return mat;
+  mat.color.setHex(0xffffff);mat.map=map;mat.userData.tint=color;return mat;
  }
  skin(group,geometry,material,weights){
   const p=geometry.attributes.position,indices=[],values=[];
@@ -83,7 +103,7 @@ export class CharacterRig {
   return this.skin(group,geometry,mat,(x,y)=>y<1.04?[['hips',clamp((1.1-y)/.2,0,1)],['spine',1-clamp((1.1-y)/.2,0,1)]]:[['spine',clamp((1.26-y)/.22,0,1)],['chest',1-clamp((1.26-y)/.22,0,1)]]);
  }
  sleeves(group,mat,plate=false,id=null){
-  const sleeve=id?this.material(id,mat.color.getHex(),plate?'steel':'cloth',plate?[0,.20,.31,.94]:[0,.08,.25,.4]):mat;
+  const sleeve=id?this.material(id,mat.userData.tint??mat.color.getHex(),plate?'steel':id==='leather-vest'?'leather':'cloth'):mat;
   for(const [side,arm]of Object.entries(this.arms)){
    const upper=this.group('shoulder-cap',arm.shoulder);group.userData.attached??=[];group.userData.attached.push(upper);
    oval(upper,.066,sleeve,[0,-.005,0],[1,1,.82]);
@@ -95,7 +115,7 @@ export class CharacterRig {
  trousers(group,mat,plate=false,id=null){
   const geometry=new THREE.SphereGeometry(.153,40,24);geometry.scale(1,.60,.74);geometry.translate(0,.883,0);planarUV(geometry);for(let i=0;i<geometry.attributes.uv.count;i++)geometry.attributes.uv.setY(i,1-geometry.attributes.uv.getY(i));this.skin(group,geometry,mat,()=>[['hips',1]]);
   for(const [side,leg]of Object.entries(this.legs)){
-   const half=leg.sign<0?0:.5,legMat=id?this.material(id,mat.color.getHex(),plate?'steel':'leather',[half,.22,half+.5,1]):mat;
+   const legMat=id?this.material(id,mat.userData.tint??mat.color.getHex(),plate?'steel':id==='mage-pants'?'cloth':'leather'):mat;
    const g=planarUV(organicLimb(.8,[[0,.087],[.12,.09],[.36,.067],[.51,.049],[.65,.061],[.83,.041],[1,.031]],.82));g.rotateZ(Math.PI);g.translate(leg.sign*.097,.88,0);
    this.skin(group,g,legMat,(x,y)=>{const blend=clamp((.51-y)/.08,0,1);return [[side+'Hip',1-blend],[side+'Knee',blend]];});
    const trim=this.group('trouser-trim',leg.hip);group.userData.attached??=[];group.userData.attached.push(trim);
@@ -111,7 +131,7 @@ export class CharacterRig {
    band(foot,tall?.064:.039,this.mats.gold,[0,tall?.275:.08,0],[1,1,.86]);
    for(const y of [0,.035])band(foot,.038,this.mats.glove,[0,y,0],[1,1,.88]);
    if(tall){
-    const half=leg.sign<0?0:.5,front=id?this.material(id,mat.color.getHex(),id==='plate-boots'?'steel':'leather',[half,0,half+.5,.7]):mat,g=planarUV(new THREE.SphereGeometry(.055,32,20));
+    const front=id?this.material(id,mat.userData.tint??mat.color.getHex(),id==='plate-boots'?'steel':'leather'):mat,g=planarUV(new THREE.SphereGeometry(.055,32,20));
     for(let i=0;i<g.attributes.uv.count;i++)g.attributes.uv.setY(i,1-g.attributes.uv.getY(i));mesh(foot,g,front,[0,.145,.034],[.90,2.55,.40]);
     for(const [y,r]of [[.10,.047],[.215,.058]]){band(foot,r,this.mats.glove,[0,y,0],[1,1,.86]);oval(foot,.006,this.mats.gold,[.019,y,r*.9],[1,1,.5]);}
    }
@@ -222,30 +242,41 @@ export class CharacterRig {
   }
  }
  pose({time=0,action='idle',angle=.55,reducedMotion=false}={}){
-  const t=reducedMotion?0:time/1000,breathe=Math.sin(t*2)*.009;
+  const t=reducedMotion?0:time/1000,breathe=Math.sin(t*2)*.006;
+  const weapon=ITEMS[this.equipment.weapon?.userData.item],offhand=ITEMS[this.equipment.offhand?.userData.item];
+  const family=weapon?.hands===2?(weapon.magic?'staff':this.equipment.weapon.userData.item==='inferno-axe'?'greataxe':'greatsword'):offhand?.shield?'shield':offhand&&weapon?'dual':weapon?.magic?'wand':'single',stance=STANCES[family];
   for(const [bone,position]of this.bindPositions){bone.rotation.set(0,0,0);bone.position.copy(position);}
-  this.root.rotation.y=angle;this.bones.spine.rotation.x=breathe;this.bones.chest.rotation.y=Math.sin(t*.9)*.018;this.bones.head.rotation.y=.10-Math.sin(t*.9)*.025;
-  for(const [side,arm]of Object.entries(this.arms)){const item=this.equipment[side==='right'?'weapon':'offhand']?.userData.item;arm.shoulder.rotation.z=arm.sign*.20;arm.shoulder.rotation.x=-.12;arm.elbow.rotation.x=-.28;arm.grip.rotation.z=ITEMS[item]?.shield?0:arm.sign*2.25;arm.grip.rotation.y=arm.sign*-.08;}
-  for(const leg of Object.values(this.legs)){leg.hip.rotation.z=leg.sign*.055;leg.ankle.rotation.y=leg.sign*.1;}
-  this.legs.right.hip.rotation.x=-.08;this.legs.right.knee.rotation.x=.08;this.legs.left.hip.rotation.x=.05;
-  const progress=clamp(time/550,0,1),cycle=Math.sin(progress*progress*(3-2*progress)*Math.PI);
-  if(action==='slash'){this.arms.right.shoulder.rotation.x-=cycle*1.1;this.arms.right.shoulder.rotation.z+=cycle*.8;this.arms.right.elbow.rotation.x-=cycle*.85;this.bones.chest.rotation.y-=cycle*.28;}
-  if(action==='slash'&&this.equipment.offhand&&!ITEMS[this.equipment.offhand.userData.item]?.shield){this.arms.left.shoulder.rotation.x=-cycle*.8;this.arms.left.elbow.rotation.x=-.12-cycle*.65;}
-  if(action==='guard'){this.arms.left.shoulder.rotation.x=-.9;this.arms.left.elbow.rotation.x=-1.0;this.arms.left.grip.rotation.z=0;}
-  if(action==='cast'){this.arms.right.shoulder.rotation.x=-.65;this.arms.right.elbow.rotation.x=-.65;this.arms.left.shoulder.rotation.z=.65;}
-  if(action==='walk')for(const [side,leg]of Object.entries(this.legs)){const step=Math.sin(t*5)*leg.sign;leg.hip.rotation.x=step*.22;leg.knee.rotation.x=Math.max(0,-step)*.35;this.arms[side].shoulder.rotation.x=-step*.18;}
-  this.bones.capeMid.rotation.x=Math.sin(t*1.8)*.045;this.bones.capeHem.rotation.x=Math.sin(t*1.8-.7)*.065;
-  if(ITEMS[this.equipment.weapon?.userData.item]?.hands===2){
-   this.root.updateMatrixWorld(true);
-   const cutting=action==='slash'?cycle:0,wide=this.equipment.weapon.userData.item==='inferno-axe',position=new THREE.Vector3((wide?-.18:-.14)+cutting*.12,1.19+cutting*.10,.21),rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(.10+cutting*1.25,0,(wide?.34:.24)-cutting*.35));
-   const worldRotation=this.root.getWorldQuaternion(new THREE.Quaternion()).multiply(rotation);
-   for(const [side,arm]of Object.entries(this.arms)){
-    const local=position.clone().add(new THREE.Vector3(0,side==='right'?0:-.125,0).applyQuaternion(rotation)),palm=this.root.localToWorld(local);
-    const wrist=palm.clone().add(new THREE.Vector3(0,.055,-.014).applyQuaternion(worldRotation)),shoulder=arm.shoulder.getWorldPosition(new THREE.Vector3()),pole=this.root.localToWorld(new THREE.Vector3(arm.sign*.38,1.03,.15));
-    const solved=solveArm(shoulder,wrist,pole,{upper:.29,forearm:.255}),down=new THREE.Vector3(0,-1,0),upperQ=new THREE.Quaternion().setFromUnitVectors(down,solved.elbow.clone().sub(shoulder).normalize()),foreQ=new THREE.Quaternion().setFromUnitVectors(down,solved.wrist.clone().sub(solved.elbow).normalize());
-    arm.shoulder.quaternion.copy(arm.shoulder.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(upperQ));arm.elbow.quaternion.copy(upperQ.clone().invert().multiply(foreQ));arm.wrist.quaternion.copy(foreQ.clone().invert().multiply(worldRotation));arm.grip.rotation.set(0,0,0);this.root.updateMatrixWorld(true);
-   }
+  const progress=clamp(time/550,0,1),cycle=Math.sin(progress*progress*(3-2*progress)*Math.PI),cut=action==='slash'?cycle:0,cast=action==='cast'?cycle:0;
+  this.root.rotation.y=angle;this.bones.hips.position.y-=stance.lower;
+  this.bones.spine.rotation.x=breathe+cut*.07;this.bones.chest.rotation.y=stance.twist+Math.sin(t*.9)*.012-cut*.28;
+  this.bones.head.rotation.y=-stance.twist*.65+.10-Math.sin(t*.9)*.015;
+  const right=new THREE.Vector3(...stance.right),rotation=new THREE.Euler(...stance.rotation);
+  right.x+=cut*(family==='staff'?.22:stance.spread?.02:.32);right.y+=cut*.17+cast*.09+breathe;right.z+=cut*(stance.spread?.035:.10)+cast*.02;
+  rotation.x+=cut*(family==='staff'?.65:1.15)-cast*.25;rotation.z+=cut*(family==='staff'?.35:family==='greataxe'?.5:-.65);
+  let left=new THREE.Vector3(...(stance.left||[0,1,.2])),leftRotation=new THREE.Euler(...(stance.leftRotation||[0,0,0]));
+  if(family==='dual'){left.x-=cut*.24;left.y+=cut*.21;left.z+=cut*.1;leftRotation.x-=cut*.8;leftRotation.z+=cut*.8;}
+  if(action==='guard'){left.set(.08,1.32,.34);leftRotation.set(-.12,-.15,0);}
+  if(cast&&!stance.spread){left.set(.25,1.13+cast*.1,.25);leftRotation.set(-.5,0,-.2);}
+  if(action==='walk'&&!stance.spread){right.y+=Math.sin(t*5)*.025;left.y-=Math.sin(t*5)*.025;}
+  const rightQ=new THREE.Quaternion().setFromEuler(rotation);
+  if(stance.spread){left=right.clone().add(new THREE.Vector3(0,stance.spread,0).applyQuaternion(rightQ));leftRotation.copy(rotation);}
+  // Solve both elbows to the authored palms, never rotate an independent prop over a hand.
+  this.root.updateMatrixWorld(true);
+  for(const [side,arm]of Object.entries(this.arms)){
+   const local=side==='right'?right:left,q=side==='right'?rightQ:new THREE.Quaternion().setFromEuler(leftRotation);
+   const worldQ=this.root.getWorldQuaternion(new THREE.Quaternion()).multiply(q),palm=this.root.localToWorld(local.clone());
+   const wrist=palm.clone().add(new THREE.Vector3(0,.055,-.014).applyQuaternion(worldQ)),shoulder=arm.shoulder.getWorldPosition(new THREE.Vector3()),pole=this.root.localToWorld(new THREE.Vector3(arm.sign*.48,1.08,.06));
+   const solved=solveArm(shoulder,wrist,pole,{upper:.29,forearm:.255}),down=new THREE.Vector3(0,-1,0),upperQ=new THREE.Quaternion().setFromUnitVectors(down,solved.elbow.clone().sub(shoulder).normalize()),foreQ=new THREE.Quaternion().setFromUnitVectors(down,solved.wrist.clone().sub(solved.elbow).normalize());
+   arm.shoulder.quaternion.copy(arm.shoulder.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(upperQ));arm.elbow.quaternion.copy(upperQ.clone().invert().multiply(foreQ));arm.wrist.quaternion.copy(foreQ.clone().invert().multiply(worldQ));arm.grip.rotation.set(0,0,0);this.root.updateMatrixWorld(true);
   }
+  // Plant the feet while the pelvis lowers into each weapon's stance.
+  for(const [side,leg]of Object.entries(this.legs)){
+   const step=action==='walk'?Math.sin(t*5)*leg.sign:0,foot=this.root.localToWorld(new THREE.Vector3(leg.sign*stance.feet[0],.08+Math.max(0,step)*.06,leg.sign*stance.feet[1]+step*.10));
+   const hip=leg.hip.getWorldPosition(new THREE.Vector3()),pole=this.root.localToWorld(new THREE.Vector3(leg.sign*.25,.45,.5)),solved=solveArm(hip,foot,pole,{upper:.41,forearm:.39}),down=new THREE.Vector3(0,-1,0),upperQ=new THREE.Quaternion().setFromUnitVectors(down,solved.elbow.clone().sub(hip).normalize()),lowerQ=new THREE.Quaternion().setFromUnitVectors(down,solved.wrist.clone().sub(solved.elbow).normalize());
+   leg.hip.quaternion.copy(leg.hip.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(upperQ));leg.knee.quaternion.copy(upperQ.clone().invert().multiply(lowerQ));
+   const footQ=this.root.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,leg.sign*.12,0)));leg.ankle.quaternion.copy(lowerQ.clone().invert().multiply(footQ));this.root.updateMatrixWorld(true);
+  }
+  this.bones.capeMid.rotation.x=Math.sin(t*1.8)*.045;this.bones.capeHem.rotation.x=Math.sin(t*1.8-.7)*.065;
   this.root.updateMatrixWorld(true);this.skeleton.update();
  }
  destroy(){this.skeleton.dispose();this.faceTexture?.dispose();for(const texture of this.textures.values())texture.dispose();release(this.root);}
@@ -254,13 +285,13 @@ export class CharacterRig {
 export class RiggedEquipmentFigure {
  constructor(sprites={},renderer=combatWebGLRenderer()){
   this.renderer=renderer;this.model=new CharacterRig(sprites);this.scene=new THREE.Scene();this.scene.add(this.model.root);
-  this.scene.add(new THREE.HemisphereLight(0xc9dae1,0x30303e,1.6));const key=new THREE.DirectionalLight(0xffdfaf,2.0);key.position.set(-2,3,4);this.scene.add(key);const rim=new THREE.DirectionalLight(0x91b9da,1.3);rim.position.set(2,2,-2);this.scene.add(rim);
+  this.scene.add(new THREE.HemisphereLight(0xc9dae1,0x30303e,.95));const key=new THREE.DirectionalLight(0xffdfaf,1.5);key.position.set(-2,3,4);this.scene.add(key);const rim=new THREE.DirectionalLight(0x91b9da,.65);rim.position.set(2,2,-2);this.scene.add(rim);
   this.camera=new THREE.OrthographicCamera(-.66,.66,1.1,-1.1,.1,10);this.camera.position.set(0,.98,4);this.camera.lookAt(0,.98,0);
-  this.canvas=document.createElement('canvas');this.canvas.width=480;this.canvas.height=800;this.context=this.canvas.getContext('2d');this.pixels=document.createElement('canvas');this.pixels.width=144;this.pixels.height=240;this.pixelContext=this.pixels.getContext('2d',{willReadFrequently:true});
+  this.canvas=document.createElement('canvas');this.canvas.width=480;this.canvas.height=800;this.context=this.canvas.getContext('2d');this.pixels=document.createElement('canvas');this.pixels.width=240;this.pixels.height=400;this.pixelContext=this.pixels.getContext('2d',{willReadFrequently:true});
   const floor=mesh(this.scene,new THREE.CircleGeometry(.36,48),new THREE.MeshBasicMaterial({color:0x0d1413,transparent:true,opacity:.5}),[0,.007,0]);floor.rotation.x=-Math.PI/2;
  }
- sync(save,state={}){this.model.equip(save);this.model.pose(state);this.renderer.render(this.scene,this.camera);this.context.clearRect(0,0,480,800);this.pixelContext.imageSmoothingEnabled=false;this.pixelContext.clearRect(0,0,144,240);this.pixelContext.drawImage(this.renderer.domElement,0,0,144,240);
-  const frame=this.pixelContext.getImageData(0,0,144,240),data=frame.data;for(let i=0;i<data.length;i+=4){if(data[i+3]<120){data[i+3]=0;continue;}data[i+3]=255;for(let c=0;c<3;c++)data[i+c]=Math.min(255,Math.round(data[i+c]/16)*16);}this.pixelContext.putImageData(frame,0,0);this.context.imageSmoothingEnabled=false;this.context.drawImage(this.pixels,0,0,480,800);}
+ sync(save,state={}){this.model.equip(save);this.model.pose(state);this.renderer.render(this.scene,this.camera);this.context.clearRect(0,0,480,800);this.pixelContext.imageSmoothingEnabled=false;this.pixelContext.clearRect(0,0,240,400);this.pixelContext.drawImage(this.renderer.domElement,0,0,240,400);
+  const frame=this.pixelContext.getImageData(0,0,240,400),data=frame.data;for(let i=0;i<data.length;i+=4){if(data[i+3]<120){data[i+3]=0;continue;}data[i+3]=255;for(let c=0;c<3;c++)data[i+c]=Math.min(255,Math.round(data[i+c]/8)*8);}this.pixelContext.putImageData(frame,0,0);this.context.imageSmoothingEnabled=false;this.context.drawImage(this.pixels,0,0,480,800);}
  destroy(){this.model.destroy();release(this.scene);this.canvas.width=this.canvas.height=0;this.renderer.renderLists.dispose();}
 }
 
