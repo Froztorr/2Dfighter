@@ -3,20 +3,24 @@ import {ITEMS} from './core.mjs';
 import {organicLimb,sculptedHand} from './player-sculpt.mjs';
 import {solveArm} from './player-rig.mjs';
 import {makeWeapon,makeShield,combatWebGLRenderer,WEAPON_STYLES} from './player-3d.mjs';
+import {cleanPose} from './pose-settings.mjs';
 
 const clamp=THREE.MathUtils.clamp;
 // Palm targets are in body space; every garment follows the same solved skeleton.
-const STANCES={
- staff:{right:[-.48,1.31,.22],rotation:[-.25,0,3.45],left:[.24,1.02,.04],leftRotation:[-.45,-.15,-2.85],feet:[.13,.04],twist:.10,lower:.01},
- greatsword:{right:[-.36,1.46,.10],rotation:[0,0,3.21],left:[.28,.89,.08],leftRotation:[0,0,-.12],feet:[.18,.05],twist:-.16,lower:.015},
+export const STANCES={
+ staff:{right:[-.48,1.29,.16],rotation:[.2,0,-2.5],left:[.33,1.03,.12],leftRotation:[.05,.10,-.10],feet:[.16,.08],hips:[.05,0,0],body:[.04,0,-.07],twist:-.12,lower:.02},
+ greatsword:{right:[-.24,1.33,.22],rotation:[.25,-.2,.70],left:[.28,.97,.18],leftRotation:[0,0,-.20],feet:[.21,.10],hips:[-.04,0,0],body:[-.08,0,.08],twist:-.23,lower:.03},
  greataxe:{right:[-.12,1.12,.29],rotation:[.16,0,-.55],spread:-.125,feet:[.20,-.04],twist:.18,lower:.05},
- mixed:{right:[-.17,1.51,.12],rotation:[.08,-.18,1.65],left:[.25,1.00,.25],leftRotation:[.15,.1,1.7],feet:[.23,.17],twist:.34,lower:.09},
- swords:{right:[-.29,.91,.16],rotation:[.1,0,2.16],left:[.29,.92,.24],leftRotation:[.15,.3,2.18],feet:[.19,.06],twist:-.12,lower:.02},
- dual:{right:[-.18,1.24,.31],rotation:[.05,-.1,-.9],left:[.35,1.18,.20],leftRotation:[.05,.1,-.12],feet:[.20,.17],twist:.28,lower:.07},
- shield:{right:[-.29,.92,.16],rotation:[.12,0,2.95],left:[.25,.91,.28],leftRotation:[.08,-.25,-.12],feet:[.15,-.09],twist:-.12,lower:.02},
- wand:{right:[-.30,1.19,.25],rotation:[-.14,0,.28],left:[.29,.91,.12],leftRotation:[0,0,-.15],feet:[.12,.06],twist:.10,lower:.01},
+ mixed:{right:[-.19,1.48,.13],rotation:[.08,-.18,1.65],left:[.25,1.00,.25],leftRotation:[.15,.1,1.7],feet:[.23,.17],hips:[.04,0,.02],body:[.10,0,-.07],twist:.34,lower:.09},
+ swords:{right:[-.32,1.05,.22],rotation:[.5,0,.8],left:[.30,.92,.30],leftRotation:[.2,.1,2.25],feet:[.22,.13],hips:[-.04,0,0],body:[.08,0,.09],twist:-.22,lower:.05},
+ dual:{right:[-.12,1.24,.38],rotation:[.05,-.1,-.9],left:[.35,1.18,.25],leftRotation:[.05,.1,-.12],feet:[.23,.17],hips:[.04,0,.03],body:[.14,0,-.06],twist:.35,lower:.09},
+ shield:{right:[-.32,1.12,.20],rotation:[.25,0,.40],left:[.20,1.19,.35],leftRotation:[.08,-.25,-.12],feet:[.20,-.13],hips:[-.04,0,0],body:[.08,0,.06],twist:-.20,lower:.04},
  single:{right:[-.29,.98,.17],rotation:[.12,0,.45],left:[.28,.88,.08],leftRotation:[0,0,-.12],feet:[.12,-.03],twist:-.10,lower:.01}
 };
+export function stanceFor(equipment){
+ const weapon=ITEMS[equipment.weapon],offhand=ITEMS[equipment.offhand],a=WEAPON_STYLES[equipment.weapon]?.kind==='sword',b=WEAPON_STYLES[equipment.offhand]?.kind==='sword';
+ return weapon?.magic?'staff':weapon?.hands===2?(equipment.weapon==='inferno-axe'?'greataxe':'greatsword'):offhand?.shield?'shield':offhand&&weapon?(a&&b?'swords':a||b?'mixed':'dual'):'single';
+}
 function mesh(parent,geometry,material,position=[0,0,0],scale=[1,1,1]){const object=new THREE.Mesh(geometry,material);object.position.set(...position);object.scale.set(...scale);parent.add(object);return object;}
 function oval(parent,radius,material,position,scale){return mesh(parent,new THREE.SphereGeometry(radius,32,20),material,position,scale);}
 function band(parent,radius,material,position,scale=[1,1,1]){const object=mesh(parent,new THREE.TorusGeometry(radius,.004,8,40),material,position,scale);object.rotation.x=Math.PI/2;return object;}
@@ -221,7 +225,7 @@ export class CharacterRig {
    if(!id)continue;const item=ITEMS[id];if(!item)continue;
    if(slot==='weapon'||slot==='offhand'){
     const object=item.shield?makeShield(id):makeWeapon(id),arm=this.arms[slot==='weapon'&&!item.magic?'right':'left'];arm.grip.add(object);object.userData.item=id;const materials=new Map();object.traverse(o=>{if(!o.isMesh)return;const source=o.material;if(!materials.has(source)){materials.set(source,new THREE.MeshLambertMaterial({color:source.color,emissive:source.emissive,emissiveIntensity:source.emissiveIntensity}));source.dispose();}o.material=materials.get(source);});
-    if(id==='greatsword')object.scale.set(1.3,1.9,1.1);
+    if(id==='greatsword')object.scale.set(1.3,1.2,1.1);
     if(item.magic){object.scale.y=1.25;object.position.y=-.25;}
     if(item.shield){
      object.rotation.y=Math.PI;object.position.z=.065;
@@ -251,18 +255,16 @@ export class CharacterRig {
    if(JSON.stringify(profile)!==arm.profile){arm.hand.geometry.dispose();arm.hand.geometry=sculptedHand(side,profile);arm.profile=JSON.stringify(profile);}
   }
  }
- pose({time=0,action='idle',angle=.55,reducedMotion=false}={}){
+ pose({time=0,action='idle',angle=.55,reducedMotion=false,posture}={}){
   const t=reducedMotion?0:time/1000,breathe=Math.sin(t*2)*.006;
-  const weapon=ITEMS[this.equipment.weapon?.userData.item],offhand=ITEMS[this.equipment.offhand?.userData.item];
-  const mainSword=WEAPON_STYLES[this.equipment.weapon?.userData.item]?.kind==='sword',offSword=WEAPON_STYLES[this.equipment.offhand?.userData.item]?.kind==='sword';
-  const family=weapon?.magic?'staff':weapon?.hands===2?(this.equipment.weapon.userData.item==='inferno-axe'?'greataxe':'greatsword'):offhand?.shield?'shield':offhand&&weapon?(mainSword&&offSword?'swords':mainSword||offSword?'mixed':'dual'):'single',stance=STANCES[family],mirrored=family==='mixed'&&offSword;
+  const family=stanceFor({weapon:this.equipment.weapon?.userData.item,offhand:this.equipment.offhand?.userData.item}),stance={...STANCES[family],...cleanPose(posture)},mirrored=family==='mixed'&&WEAPON_STYLES[this.equipment.offhand?.userData.item]?.kind==='sword';
   for(const [bone,position]of this.bindPositions){bone.rotation.set(0,0,0);bone.position.copy(position);}
   const progress=clamp(time/550,0,1),cycle=Math.sin(progress*progress*(3-2*progress)*Math.PI),cut=action==='slash'?cycle:0,cast=action==='cast'?cycle:0;
-  this.root.rotation.y=angle;this.bones.hips.position.y-=stance.lower;
-  this.bones.spine.rotation.x=breathe+cut*.07;this.bones.chest.rotation.y=stance.twist*(mirrored?-1:1)+Math.sin(t*.9)*.012-cut*.28;
+  this.root.rotation.y=angle;this.bones.hips.position.add(new THREE.Vector3(...(stance.hips||[0,0,0])));this.bones.hips.position.y-=stance.lower;
+  this.bones.spine.rotation.set(...(stance.body||[0,0,0]));this.bones.spine.rotation.x+=breathe+cut*.07;this.bones.chest.rotation.y=stance.twist*(mirrored?-1:1)+Math.sin(t*.9)*.012-cut*.28;
   this.bones.head.rotation.y=-stance.twist*.65+.10-Math.sin(t*.9)*.015;
   let right=new THREE.Vector3(...stance.right);const rotation=new THREE.Euler(...stance.rotation);
-  right.x+=cut*(family==='staff'?.22:stance.spread?.02:.32);right.y+=cut*.17+cast*.09+breathe;right.z+=cut*(stance.spread?.035:.10)+cast*.02;
+  right.x+=cut*(family==='staff'?.22:stance.spread?.02:.28);right.y+=cut*.17+cast*.09+breathe;right.z+=cut*(stance.spread?.035:.10)+cast*.02;
   rotation.x+=cut*(family==='staff'?.65:1.15)-cast*.25;rotation.z+=cut*(family==='staff'?.35:family==='greataxe'?.5:-.65);
   let left=new THREE.Vector3(...(stance.left||[0,1,.2])),leftRotation=new THREE.Euler(...(stance.leftRotation||[0,0,0]));
   if(family==='dual'){left.x-=cut*.24;left.y+=cut*.21;left.z+=cut*.1;leftRotation.x-=cut*.8;leftRotation.z+=cut*.8;}
@@ -271,16 +273,16 @@ export class CharacterRig {
   if(action==='walk'&&!stance.spread){right.y+=Math.sin(t*5)*.025;left.y-=Math.sin(t*5)*.025;}
   let rightQ=new THREE.Quaternion().setFromEuler(rotation),leftQ=new THREE.Quaternion().setFromEuler(leftRotation);
   if(family==='greatsword'||family==='mixed'){
-   right.set(...stance.right).lerp(new THREE.Vector3(-.12,family==='greatsword'?1.30:1.10,.25),cut);right.y+=breathe;
+   right.set(...stance.right).lerp(new THREE.Vector3(-.03,family==='greatsword'?1.30:1.10,.25),cut);right.y+=breathe;
    rightQ.setFromEuler(new THREE.Euler(...stance.rotation)).slerp(new THREE.Quaternion().setFromEuler(new THREE.Euler(-.9,0,Math.PI-.05)),cut);
    if(family==='greatsword'){
     const join=cut;
-    left.lerp(right.clone().add(new THREE.Vector3(0,-.2375,0).applyQuaternion(rightQ)),join);leftQ.slerp(rightQ,join);
+    left.lerp(right.clone().add(new THREE.Vector3(0,-.15,0).applyQuaternion(rightQ)),join);leftQ.slerp(rightQ,join);
    }
   }
   if(family==='staff'){
    right.set(...stance.right);right.y+=breathe+(cast||cut)*.1;right.z+=(cast||cut)*.09;
-   rightQ.setFromEuler(new THREE.Euler(-.25-(cast||cut)*.35,0,3.45));
+   rightQ.setFromEuler(new THREE.Euler(stance.rotation[0]-(cast||cut)*.35,stance.rotation[1],stance.rotation[2]));
   }
   if(stance.spread){left=right.clone().add(new THREE.Vector3(0,stance.spread,0).applyQuaternion(rightQ));leftQ.copy(rightQ);}
   if(mirrored){
@@ -293,13 +295,13 @@ export class CharacterRig {
    arm.gesture.visible=family==='staff'&&side==='right';arm.hand.visible=!arm.gesture.visible;
    const local=side==='right'?right:left,q=side==='right'?rightQ:leftQ;
    const worldQ=this.root.getWorldQuaternion(new THREE.Quaternion()).multiply(q),palm=this.root.localToWorld(local.clone());
-   const wrist=palm.clone().add(new THREE.Vector3(0,.055,-.014).applyQuaternion(worldQ)),shoulder=arm.shoulder.getWorldPosition(new THREE.Vector3()),pole=this.root.localToWorld(new THREE.Vector3(arm.sign*.48,1.08,.06));
+   const wrist=palm.clone().add(new THREE.Vector3(0,.055,-.014).applyQuaternion(worldQ)),shoulder=arm.shoulder.getWorldPosition(new THREE.Vector3()),pole=this.root.localToWorld(new THREE.Vector3(...(stance[side+'Pole']||[arm.sign*.48,1.08,-.08])));
    const solved=solveArm(shoulder,wrist,pole,{upper:.29,forearm:.255}),down=new THREE.Vector3(0,-1,0),upperQ=new THREE.Quaternion().setFromUnitVectors(down,solved.elbow.clone().sub(shoulder).normalize()),foreQ=new THREE.Quaternion().setFromUnitVectors(down,solved.wrist.clone().sub(solved.elbow).normalize());
    arm.shoulder.quaternion.copy(arm.shoulder.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(upperQ));arm.elbow.quaternion.copy(upperQ.clone().invert().multiply(foreQ));arm.wrist.quaternion.copy(foreQ.clone().invert().multiply(worldQ));arm.grip.rotation.set(0,0,0);this.root.updateMatrixWorld(true);
   }
   // Plant the feet while the pelvis lowers into each weapon's stance.
   for(const [side,leg]of Object.entries(this.legs)){
-   const step=action==='walk'?Math.sin(t*5)*leg.sign:0,foot=this.root.localToWorld(new THREE.Vector3(leg.sign*stance.feet[0],.08+Math.max(0,step)*.06,leg.sign*stance.feet[1]+step*.10));
+   const step=action==='walk'?Math.sin(t*5)*leg.sign:0,target=new THREE.Vector3(...(stance[side+'Foot']||[leg.sign*stance.feet[0],.08,leg.sign*stance.feet[1]]));target.y+=Math.max(0,step)*.06;target.z+=step*.10;const foot=this.root.localToWorld(target);
    const hip=leg.hip.getWorldPosition(new THREE.Vector3()),pole=this.root.localToWorld(new THREE.Vector3(leg.sign*.25,.45,.5)),solved=solveArm(hip,foot,pole,{upper:.41,forearm:.39}),down=new THREE.Vector3(0,-1,0),upperQ=new THREE.Quaternion().setFromUnitVectors(down,solved.elbow.clone().sub(hip).normalize()),lowerQ=new THREE.Quaternion().setFromUnitVectors(down,solved.wrist.clone().sub(solved.elbow).normalize());
    leg.hip.quaternion.copy(leg.hip.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(upperQ));leg.knee.quaternion.copy(upperQ.clone().invert().multiply(lowerQ));
    const footQ=this.root.getWorldQuaternion(new THREE.Quaternion()).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,leg.sign*.12,0)));leg.ankle.quaternion.copy(lowerQ.clone().invert().multiply(footQ));this.root.updateMatrixWorld(true);
@@ -318,7 +320,7 @@ export class RiggedEquipmentFigure {
   this.canvas=document.createElement('canvas');this.canvas.width=480;this.canvas.height=800;this.context=this.canvas.getContext('2d');this.pixels=document.createElement('canvas');this.pixels.width=240;this.pixels.height=400;this.pixelContext=this.pixels.getContext('2d',{willReadFrequently:true});
   const floor=mesh(this.scene,new THREE.CircleGeometry(.36,48),new THREE.MeshBasicMaterial({color:0x0d1413,transparent:true,opacity:.5}),[0,.007,0]);floor.rotation.x=-Math.PI/2;
  }
- sync(save,state={}){this.model.equip(save);this.model.pose(state);this.renderer.render(this.scene,this.camera);this.context.clearRect(0,0,480,800);this.pixelContext.imageSmoothingEnabled=false;this.pixelContext.clearRect(0,0,240,400);this.pixelContext.drawImage(this.renderer.domElement,0,0,240,400);
+ sync(save,state={}){this.model.equip(save);this.model.pose({...state,posture:state.posture??state.poses?.[stanceFor(save.equipment)]});this.renderer.render(this.scene,this.camera);this.context.clearRect(0,0,480,800);this.pixelContext.imageSmoothingEnabled=false;this.pixelContext.clearRect(0,0,240,400);this.pixelContext.drawImage(this.renderer.domElement,0,0,240,400);
   const frame=this.pixelContext.getImageData(0,0,240,400),data=frame.data;for(let i=0;i<data.length;i+=4){if(data[i+3]<120){data[i+3]=0;continue;}data[i+3]=255;for(let c=0;c<3;c++)data[i+c]=Math.min(255,Math.round(data[i+c]/8)*8);}this.pixelContext.putImageData(frame,0,0);this.context.imageSmoothingEnabled=false;this.context.drawImage(this.pixels,0,0,480,800);}
  destroy(){this.model.destroy();release(this.scene);this.canvas.width=this.canvas.height=0;this.renderer.renderLists.dispose();}
 }

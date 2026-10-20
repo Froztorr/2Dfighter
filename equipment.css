@@ -53,4 +53,5 @@
 .equipmentDescription h3{font:18px Georgia;color:#e0e4e7;margin:10px 0}
 .equipmentDescription button{color:#64c2aa;min-height:44px}
 .equipmentDescription details{border-top:1px solid #59616b;padding:10px 0}
+.poseStudioLink{font:12px Arial;color:#c9b380;text-decoration:none;padding:12px;min-height:40px}
 @media(max-height:680px){.overview .equipmentHeader{min-height:76px}.equipmentRail{gap:9px}.equipmentBelt{margin-top:12px}.equipmentNav{padding:0}.equipmentVitals{margin-bottom:12px}.equipmentHeader{min-height:52px}.equipmentViews{height:38px}.equipmentSelection{font-size:11px}}

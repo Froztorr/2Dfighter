@@ -2,7 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Vector3,Quaternion} from './vendor/three.module.js';
 import {ITEMS,newSave} from './core.mjs';
-import {CharacterRig} from './equipment-rig.mjs';
+import {CharacterRig,STANCES,stanceFor} from './equipment-rig.mjs';
+import {cleanPose,readPoses,writePose} from './pose-settings.mjs';
 
 test('inventory face is modeled on the head and uses the same material language as the body',()=>{
  const model=new CharacterRig();
@@ -58,14 +59,14 @@ test('reference stances select the correct hand, blade direction and relaxed/rea
   for(const [weapon,offhand]of [['greatsword',null],['iron-sword','mace'],['ember-staff',null],['iron-sword','rust-sword'],['iron-sword','steel-shield'],['venom-dagger','mace']]){
    save.equipment.weapon=weapon;save.equipment.offhand=offhand;model.equip(save);model.pose({angle:0,reducedMotion:true});
    const ready=[point('right'),point('left')];
-   if(weapon==='greatsword'){assert.ok(direction('weapon').y<-.9,'resting greatsword must point down');const tip=model.equipment.weapon.localToWorld(new Vector3(0,.72,0));assert.ok(tip.y>=0&&tip.y<.20,'greatsword tip rests close to the ground');assert.ok(ready[0].y>1.35&&ready[1].y<1);}
-   else if(weapon==='ember-staff'){assert.equal(model.equipment.weapon.parent,model.arms.left.grip);assert.ok(model.arms.right.gesture.visible,'mage has a free casting hand');assert.ok(direction('weapon').y<-.4);}
+   if(weapon==='greatsword'){assert.ok(direction('weapon').y>.5,'greatsword silhouette points up above the shoulder');assert.ok(ready[0].y>1.2);}
+   else if(weapon==='ember-staff'){assert.equal(model.equipment.weapon.parent,model.arms.left.grip);assert.ok(model.arms.right.gesture.visible,'mage has a free casting hand');assert.ok(direction('weapon').y>.8,'staff head points up');}
    else if(offhand==='mace'&&weapon==='iron-sword'){assert.ok(ready[0].y>1.4&&ready[1].y<1.1);assert.ok(Math.abs(direction('weapon').y)<.25,'sword rests horizontally over the shoulder');}
-   else if(offhand==='rust-sword'){assert.ok(ready.every(p=>p.y<1));assert.ok(direction('weapon').y<-.3&&direction('offhand').y<-.3,'both swords point low');}
-   else if(offhand==='steel-shield')assert.ok(ready[1].y<1.08&&ready[1].z>.2,'shield rests at the hip');
+   else if(offhand==='rust-sword'){assert.ok(direction('weapon').y>.4&&direction('offhand').y<-.3,'twin swords use opposing high/low lines');}
+   else if(offhand==='steel-shield')assert.ok(ready[1].y>1.1&&ready[1].z>.2,'shield protects the torso');
    else assert.ok(ready[0].y>1.15&&ready[1].y>1.10,'short weapons use the raised asymmetric guard');
    model.pose({action:'slash',time:275,angle:0});
-   if(weapon==='greatsword'){const grip=model.arms.right.grip.localToWorld(new Vector3(0,-.2375,0));assert.ok(grip.distanceTo(point('left'))<1e-5,'support hand joins the greatsword hilt for the cut');}
+   if(weapon==='greatsword'){const grip=model.arms.right.grip.localToWorld(new Vector3(0,-.15,0));assert.ok(grip.distanceTo(point('left'))<1e-5,'support hand joins the greatsword hilt for the cut');}
    model.pose({action:'slash',time:550,angle:0,reducedMotion:true});['right','left'].forEach((side,i)=>assert.ok(point(side).distanceTo(ready[i])<1e-5,'cut returns to reference stance'));
    let previous;
    for(let time=0;time<=550;time+=10){
@@ -135,3 +136,17 @@ test('mixed outfit accessories sit over the worn chest and capes wrap in front a
   assert.equal(model.base.torso.visible,false);assert.equal(model.base.arms.visible,false);
  }finally{model.destroy();}
 });
+
+ test('pose edits survive storage, reject invalid values and affect the same rig without changing gear',()=>{
+ const data=new Map(),storage={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)};
+ const custom={right:[-.42,1.20,.24],left:[.25,1.14,.2],rightFoot:[-.23,.08,.12],hips:[-.06,0,.02],body:[.12,0,-.10],rotation:[.2,.1,.3],twist:.22};
+ writePose(storage,'shield',custom);writePose(storage,'staff',{twist:-.2});assert.deepEqual(readPoses(storage).shield,custom);
+ assert.deepEqual(cleanPose({twist:Infinity,right:[1,2,'3'],body:[0,0,0],unknown:4}),{body:[0,0,0]});
+ assert.deepEqual(cleanPose({right:[99,-99,99]}).right,[.65,.65,.6]);
+ const model=new CharacterRig(),save=newSave();save.equipment.weapon='iron-sword';save.equipment.offhand='steel-shield';model.equip(save);
+ try{model.pose({angle:0,reducedMotion:true,posture:readPoses(storage).shield});const p=model.arms.right.grip.getWorldPosition(new Vector3());assert.ok(p.distanceTo(new Vector3(...custom.right))<1e-4);assert.equal(model.equipment.weapon.userData.item,'iron-sword');assert.equal(stanceFor(save.equipment),'shield');assert.ok(Math.abs(model.bones.spine.rotation.z-custom.body[2])<1e-6);}
+ finally{model.destroy();}
+ writePose(storage,'shield',null);assert.equal(readPoses(storage).shield,undefined);assert.equal(readPoses(storage).staff.twist,-.2);
+ assert.deepEqual(readPoses({getItem:()=>'{broken'}),{});assert.throws(()=>writePose({getItem:()=>null,setItem:()=>{throw Error('full')}},'staff',custom),/full/);
+ assert.ok(STANCES.staff.leftRotation[2]>-1);
+ });

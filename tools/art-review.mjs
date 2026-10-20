@@ -62,8 +62,8 @@ $('checkFits').onclick=()=>{
    portrait.sync(state,{action,time});const m=portrait.model;
    for(const [slot,item]of Object.entries(equipment))if(item&&!m.equipment[slot])failures.push(id+' missing '+slot);
    m.root.traverse(o=>{if(o.isSkinnedMesh){const p=o.geometry.attributes.position;for(let i=0;i<p.count;i+=53){const v=o.applyBoneTransform(i,new o.position.constructor().fromBufferAttribute(p,i));if(!Number.isFinite(v.x+v.y+v.z))failures.push(id+' invalid deformation');}}});
-   const data=portrait.context.getImageData(0,0,480,800).data;let solid=0,edge=0;for(let i=3;i<data.length;i+=4)if(data[i]>100){solid++;const pixel=(i-3)/4,x=pixel%480,y=Math.floor(pixel/480);if(x<2||x>477||y<2||y>797)edge++;}
-   if(solid<1000||edge>0)failures.push(id+' invisible / clipped ('+edge+')');count++;
+   const data=portrait.context.getImageData(0,0,480,800).data;let solid=0,edge=0,edgeAt='';for(let i=3;i<data.length;i+=4)if(data[i]>100){solid++;const pixel=(i-3)/4,x=pixel%480,y=Math.floor(pixel/480);if(x<2||x>477||y<2||y>797){edge++;edgeAt||=`${x},${y}`;}}
+   if(solid<1000||edge>0)failures.push(`${id} ${action}:${time} invisible / clipped (${edge} at ${edgeAt})`);count++;
   }
  }
  for(const id of Object.keys(ITEMS))if(!rigItemIcon(id).startsWith('data:image/png'))failures.push(id+' missing fitted icon');

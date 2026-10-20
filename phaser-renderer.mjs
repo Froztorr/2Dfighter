@@ -1,6 +1,7 @@
 import { Player3D } from './player-3d.mjs';
 import { RiggedEquipmentFigure,rigItemIcon } from './equipment-rig.mjs';
 import { paintEnemyFrame } from './enemy-animation.mjs';
+import {readPoses} from './pose-settings.mjs';
 
 function addTexture(scene,key,sheet,rect,runs){
   if(scene.textures.exists(key))return key;
@@ -56,9 +57,10 @@ export function createPhaserRenderer({canvas,background,sprites,tick,getState,on
     },
     preview(canvas,save){
       if(previewGame){previewGame.destroy(false);previewGame=null;}
+      let poses={};try{poses=readPoses(localStorage);}catch{}
       class PreviewScene extends Phaser.Scene {
         create(){this.hero=new EquipmentPortrait(this,sprites,save);}
-        update(now){if(!this.hero||document.hidden||now-(this.lastFrame||0)<33)return;this.lastFrame=now;const elapsed=performance.now()-previewStarted;if(previewAction==='slash'&&elapsed>650)previewAction='idle';this.hero.sync(save,{time:previewAction==='idle'?now:elapsed,action:previewAction,angle:previewAngle,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});}
+        update(now){if(!this.hero||document.hidden||now-(this.lastFrame||0)<33)return;this.lastFrame=now;const elapsed=performance.now()-previewStarted;if(previewAction==='slash'&&elapsed>650)previewAction='idle';this.hero.sync(save,{poses,time:previewAction==='idle'?now:elapsed,action:previewAction,angle:previewAngle,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches});}
       }
       previewGame=new Phaser.Game({type:Phaser.CANVAS,canvas,width:240,height:400,transparent:true,antialias:false,pixelArt:true,audio:{noAudio:true},scene:PreviewScene,banner:false});
     },
