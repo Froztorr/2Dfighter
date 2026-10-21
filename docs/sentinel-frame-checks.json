@@ -1,0 +1,54 @@
+{
+  "frames": 96,
+  "clipped": [],
+  "unique": [
+    {
+      "clip": "walk-front",
+      "frames": 8
+    },
+    {
+      "clip": "walk-quarter",
+      "frames": 8
+    },
+    {
+      "clip": "walk-rear",
+      "frames": 8
+    },
+    {
+      "clip": "walk-back",
+      "frames": 8
+    },
+    {
+      "clip": "idle",
+      "frames": 8
+    },
+    {
+      "clip": "up",
+      "frames": 8
+    },
+    {
+      "clip": "down",
+      "frames": 8
+    },
+    {
+      "clip": "left",
+      "frames": 8
+    },
+    {
+      "clip": "right",
+      "frames": 8
+    },
+    {
+      "clip": "thrust",
+      "frames": 8
+    },
+    {
+      "clip": "kick",
+      "frames": 8
+    },
+    {
+      "clip": "cast",
+      "frames": 8
+    }
+  ]
+}

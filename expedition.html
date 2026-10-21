@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101b24"><title>Emberblade · The Moss Gate</title><link rel="stylesheet" href="expedition.css"></head>
+<body><main id="world" aria-label="2.5D expedition">
+ <canvas id="view" aria-label="Dungeon view: drag to look while exploring, drag to slash in combat"></canvas><canvas id="effects" aria-hidden="true"></canvas>
+ <header><button id="pause" aria-label="Pause">☰</button><div><small id="location">THE MOSS GATE</small><b id="compass">N</b></div><a href="index.html" aria-label="Return to hall">⌂</a></header>
+ <section id="enemyInfo" hidden><small id="enemyLabel">MOSSBOUND SENTINEL</small><div class="bar"><i id="enemyHealth"></i></div><span id="enemyGuard"></span></section>
+ <div id="reticle" aria-hidden="true">✧</div><p id="notice" role="status">กำลังสร้าง sprite…</p><span id="mode">EXPLORE</span>
+ <div id="movePad" aria-label="Movement"><button data-move="0,1" aria-label="Walk forward">▲</button><button data-move="-1,0" aria-label="Strafe left">◀</button><button data-move="0,-1" aria-label="Walk backward">▼</button><button data-move="1,0" aria-label="Strafe right">▶</button></div>
+ <div id="lookPad" aria-label="Drag here to look">✥<small>ลากเพื่อหัน</small></div>
+ <div id="defense"><button id="guard" aria-label="Hold shield">◇<small>โล่ · SHIFT</small></button><button id="dodge" aria-label="Dodge">↝<small>หลบ · SPACE</small></button><button id="nova" aria-label="Stunning pulse">✦<small>STUN · F</small></button></div>
+ <div id="attackPad" aria-label="Attack directions"><button data-strike="up">↑</button><button data-strike="left">←</button><button data-strike="down">↓</button><button data-strike="right">→</button></div>
+ <footer><div><span>HEALTH <b id="hpText"></b></span><div class="bar health"><i id="health"></i></div></div><div><span>GUARD <b id="guardText"></b></span><div class="bar stamina"><i id="stamina"></i></div></div><button id="potion" aria-label="Drink potion">✚ <span id="potions"></span></button></footer>
+ <dialog id="menu"><small>EMBERBLADE · 2.5D EXPEDITION</small><h1>THE MOSS GATE</h1><p>เดินผ่านลานหิน ล่อศัตรูเข้าปะทะ แล้วเลือกเป้าหมายด้วยการหันมอง</p><ul><li>เดิน: WASD / ปุ่มลูกศรซ้ายล่าง</li><li>หัน: ลากจอขณะเดิน · ขณะสู้ลากแป้น ✥ หรือคลิกขวาลาก · ปุ่มลูกศรคีย์บอร์ด</li><li>ฟัน: ลากจอขณะสู้ / ปุ่ม ↑ ← ↓ → / เลข 1–4</li><li>Parry: ฟันสวนลูกศรช่วงก่อนโดน · Perfect ทำให้สตั้น</li><li>กะโหลก: หลบ หรือใช้โล่ (กิน guard มาก)</li><li>กด ✦ เพื่อสตั้นเมื่อศัตรูปัดดาบ · คูลดาวน์ 10 วินาที</li></ul><p id="result"></p><button id="resume" disabled>กำลังเตรียมฉาก…</button><a href="index.html">กลับโถง · เปลี่ยนอุปกรณ์ / ตัวละคร</a></dialog>
+ </main><script type="module" src="expedition.mjs"></script></body></html>
